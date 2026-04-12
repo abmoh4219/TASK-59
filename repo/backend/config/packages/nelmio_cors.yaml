@@ -1,0 +1,13 @@
+nelmio_cors:
+    defaults:
+        origin_regex: false
+        allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
+        allow_methods: ['GET', 'OPTIONS', 'POST', 'PUT', 'PATCH', 'DELETE']
+        allow_headers: ['Content-Type', 'Authorization', 'X-CSRF-Token', 'X-Api-Signature', 'X-Timestamp', 'X-Idempotency-Key']
+        expose_headers: ['X-RateLimit-Remaining', 'Retry-After']
+        allow_credentials: true
+        max_age: 3600
+    paths:
+        '^/api/':
+            allow_origin: ['%env(CORS_ALLOW_ORIGIN)%']
+            allow_credentials: true

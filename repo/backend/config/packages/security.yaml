@@ -1,0 +1,40 @@
+security:
+    password_hashers:
+        Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'auto'
+        App\Entity\User:
+            algorithm: bcrypt
+
+    providers:
+        app_user_provider:
+            entity:
+                class: App\Entity\User
+                property: username
+
+    firewalls:
+        dev:
+            pattern: ^/(_(profiler|wdt)|css|images|js)/
+            security: false
+        main:
+            lazy: true
+            provider: app_user_provider
+            stateless: false
+            json_login:
+                check_path: /api/auth/login
+                username_path: username
+                password_path: password
+            logout:
+                path: /api/auth/logout
+
+    access_control:
+        - { path: ^/api/health, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }
+        - { path: ^/api/auth/csrf-token, roles: PUBLIC_ACCESS }
+        - { path: ^/api/admin, roles: ROLE_ADMIN }
+        - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
+
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_HR_ADMIN, ROLE_SUPERVISOR, ROLE_DISPATCHER, ROLE_TECHNICIAN, ROLE_EMPLOYEE]
+        ROLE_HR_ADMIN: [ROLE_EMPLOYEE]
+        ROLE_SUPERVISOR: [ROLE_EMPLOYEE]
+        ROLE_DISPATCHER: [ROLE_EMPLOYEE]
+        ROLE_TECHNICIAN: [ROLE_EMPLOYEE]

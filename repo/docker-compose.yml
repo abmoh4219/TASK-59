@@ -1,0 +1,105 @@
+services:
+  setup:
+    image: alpine:3.19
+    volumes:
+      - .:/app
+    entrypoint: /bin/sh
+    command:
+      - -c
+      - |
+        if [ ! -f /app/backend/.env ]; then
+          cp /app/.env.example /app/backend/.env
+          echo "Copied .env.example to backend/.env"
+        fi
+        echo "Setup complete."
+
+  mysql:
+    image: mysql:8.0
+    environment:
+      MYSQL_ROOT_PASSWORD: root_pass
+      MYSQL_DATABASE: wfops
+      MYSQL_USER: wfops
+      MYSQL_PASSWORD: wfops_pass
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_pass"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      APP_ENV: prod
+      APP_SECRET: change-this-32-char-secret-here!!
+      DATABASE_URL: "mysql://wfops:wfops_pass@mysql:3306/wfops?serverVersion=8.0"
+      APP_ENCRYPTION_KEY: change-this-to-32-byte-aes-key!!
+      APP_SIGNING_KEY: change-this-signing-key-for-hmac
+      CORS_ALLOW_ORIGIN: "http://localhost:3000"
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+      mysql:
+        condition: service_healthy
+    volumes:
+      - uploads:/app/uploads
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3000:80"
+    depends_on:
+      - backend
+
+  # Test services — only run with --profile test
+  mysql-test:
+    image: mysql:8.0
+    profiles: ["test"]
+    environment:
+      MYSQL_ROOT_PASSWORD: root_pass
+      MYSQL_DATABASE: wfops_test
+      MYSQL_USER: wfops
+      MYSQL_PASSWORD: wfops_pass
+    ports:
+      - "3307:3306"
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_pass"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  test:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+      target: test
+    profiles: ["test"]
+    environment:
+      APP_ENV: test
+      APP_SECRET: test-secret-key-for-testing-only!
+      DATABASE_URL: "mysql://wfops:wfops_pass@mysql-test:3306/wfops_test?serverVersion=8.0"
+      APP_ENCRYPTION_KEY: test-encryption-key-32-bytes-ok!
+      APP_SIGNING_KEY: test-signing-key-for-hmac-tests
+    depends_on:
+      mysql-test:
+        condition: service_healthy
+    volumes:
+      - ./run_tests.sh:/app/run_tests.sh
+      - ./backend:/app/backend
+      - ./frontend:/app/frontend
+    command: ["/bin/sh", "/app/run_tests.sh"]
+
+volumes:
+  mysql-data:
+  uploads:
