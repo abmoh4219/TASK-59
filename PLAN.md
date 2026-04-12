@@ -65,26 +65,26 @@
 > Goal: All entities created, migrations run in Docker, seed data for all 6 roles
 > Complete all tasks continuously, then pause. Wait for "proceed".
 
-- [ ] 1.1 Create Entity/User.php — id, username, email, passwordHash, role (ENUM), firstName, lastName, phoneEncrypted (AES-encrypted), isActive, backupApproverId, isOut (bool, for reassignment), failedLoginCount, lockedUntil, deletedAt (soft delete), createdAt, updatedAt. Add #[ORM\Column] annotations with proper types.
-- [ ] 1.2 Create Entity/ShiftSchedule.php — id, userId, dayOfWeek, shiftStart (time), shiftEnd (time), isActive
-- [ ] 1.3 Create Entity/PunchEvent.php — id, userId, eventDate, eventTime, eventType (IN/OUT), source (CSV/MANUAL), importedAt
-- [ ] 1.4 Create Entity/AttendanceRecord.php — id, userId, recordDate, firstPunchIn, lastPunchOut, totalMinutes, exceptions (JSON array of exception types), generatedAt
-- [ ] 1.5 Create Entity/ExceptionRule.php — id, ruleType, toleranceMinutes (default 5), missedPunchWindowMinutes (default 30), filingWindowDays (default 7), isActive, updatedBy, updatedAt
-- [ ] 1.6 Create Entity/AttendanceException.php — id, attendanceRecordId, exceptionType (LATE_ARRIVAL/EARLY_LEAVE/MISSED_PUNCH/ABSENCE/APPROVED_OFFSITE), detectedAt, resolvedAt, resolvedBy
-- [ ] 1.7 Create Entity/ExceptionRequest.php — id, userId, requestType (CORRECTION/PTO/LEAVE/BUSINESS_TRIP/OUTING), startDate, endDate, startTime, endTime, reason, status (PENDING/APPROVED/REJECTED/WITHDRAWN), currentApproverId, stepNumber, clientKey (idempotency), filedAt, updatedAt
-- [ ] 1.8 Create Entity/ApprovalStep.php — id, exceptionRequestId, stepNumber (1-3), approverId, backupApproverId, status, slaDeadline, escalatedAt, actedAt
-- [ ] 1.9 Create Entity/ApprovalAction.php — id, approvalStepId, actorId, action (APPROVE/REJECT/ESCALATE/REASSIGN/WITHDRAW), comment, actedAt
-- [ ] 1.10 Create Entity/WorkOrder.php — id, submittedById, category, priority (LOW/MEDIUM/HIGH/URGENT), description, building, room, status (state machine), assignedDispatcherId, assignedTechnicianId, dispatchedAt, acceptedAt, startedAt, completedAt, ratedAt, rating (1-5 nullable), completionNotes, createdAt, updatedAt
-- [ ] 1.11 Create Entity/WorkOrderPhoto.php — id, workOrderId, originalFilename, storedPath, mimeType, sizeBytes, sha256Hash, uploadedAt
-- [ ] 1.12 Create Entity/Resource.php — id, name, type, costCenter, capacity, isAvailable, description
-- [ ] 1.13 Create Entity/Booking.php — id, requesterId, resourceId, startDatetime, endDatetime, purpose, status, clientKey, allocations (JSON), createdAt
-- [ ] 1.14 Create Entity/IdempotencyKey.php — id, clientKey (unique), entityType, entityId, expiresAt, createdAt
-- [ ] 1.15 Create Entity/FileUpload.php — id, uploaderId, entityType, entityId, originalFilename, storedPath, mimeType, sizeBytes, sha256Hash, uploadedAt
-- [ ] 1.16 Create Entity/AuditLog.php — id, actorId, actorUsername, action, entityType, entityId, oldValueMasked (JSON), newValueMasked (JSON), ipAddress, userAgent, createdAt. NO updatedAt. This is append-only.
-- [ ] 1.17 Create Entity/FailedLoginAttempt.php — id, username, ipAddress, attemptedAt
-- [ ] 1.18 Generate initial migration: php bin/console doctrine:migrations:diff. Verify SQL is correct.
-- [ ] 1.19 Create DataFixtures or migration seed: INSERT 6 users (one per role) with bcrypt hashed passwords, basic shift schedules, sample exception rules, sample resources, sample work orders in various states, sample attendance records.
-- [ ] 1.20 Verify: docker compose up --build → migrations run → all 6 logins work → MySQL has all tables.
+- [x] 1.1 Create Entity/User.php — id, username, email, passwordHash, role (ENUM), firstName, lastName, phoneEncrypted (AES-encrypted), isActive, backupApproverId, isOut (bool, for reassignment), failedLoginCount, lockedUntil, deletedAt (soft delete), createdAt, updatedAt. Add #[ORM\Column] annotations with proper types.
+- [x] 1.2 Create Entity/ShiftSchedule.php — id, userId, dayOfWeek, shiftStart (time), shiftEnd (time), isActive
+- [x] 1.3 Create Entity/PunchEvent.php — id, userId, eventDate, eventTime, eventType (IN/OUT), source (CSV/MANUAL), importedAt
+- [x] 1.4 Create Entity/AttendanceRecord.php — id, userId, recordDate, firstPunchIn, lastPunchOut, totalMinutes, exceptions (JSON array of exception types), generatedAt
+- [x] 1.5 Create Entity/ExceptionRule.php — id, ruleType, toleranceMinutes (default 5), missedPunchWindowMinutes (default 30), filingWindowDays (default 7), isActive, updatedBy, updatedAt
+- [x] 1.6 Create Entity/AttendanceException.php — id, attendanceRecordId, exceptionType (LATE_ARRIVAL/EARLY_LEAVE/MISSED_PUNCH/ABSENCE/APPROVED_OFFSITE), detectedAt, resolvedAt, resolvedBy
+- [x] 1.7 Create Entity/ExceptionRequest.php — id, userId, requestType (CORRECTION/PTO/LEAVE/BUSINESS_TRIP/OUTING), startDate, endDate, startTime, endTime, reason, status (PENDING/APPROVED/REJECTED/WITHDRAWN), currentApproverId, stepNumber, clientKey (idempotency), filedAt, updatedAt
+- [x] 1.8 Create Entity/ApprovalStep.php — id, exceptionRequestId, stepNumber (1-3), approverId, backupApproverId, status, slaDeadline, escalatedAt, actedAt
+- [x] 1.9 Create Entity/ApprovalAction.php — id, approvalStepId, actorId, action (APPROVE/REJECT/ESCALATE/REASSIGN/WITHDRAW), comment, actedAt
+- [x] 1.10 Create Entity/WorkOrder.php — id, submittedById, category, priority (LOW/MEDIUM/HIGH/URGENT), description, building, room, status (state machine), assignedDispatcherId, assignedTechnicianId, dispatchedAt, acceptedAt, startedAt, completedAt, ratedAt, rating (1-5 nullable), completionNotes, createdAt, updatedAt
+- [x] 1.11 Create Entity/WorkOrderPhoto.php — id, workOrderId, originalFilename, storedPath, mimeType, sizeBytes, sha256Hash, uploadedAt
+- [x] 1.12 Create Entity/Resource.php — id, name, type, costCenter, capacity, isAvailable, description
+- [x] 1.13 Create Entity/Booking.php — id, requesterId, resourceId, startDatetime, endDatetime, purpose, status, clientKey, allocations (JSON), createdAt
+- [x] 1.14 Create Entity/IdempotencyKey.php — id, clientKey (unique), entityType, entityId, expiresAt, createdAt
+- [x] 1.15 Create Entity/FileUpload.php — id, uploaderId, entityType, entityId, originalFilename, storedPath, mimeType, sizeBytes, sha256Hash, uploadedAt
+- [x] 1.16 Create Entity/AuditLog.php — id, actorId, actorUsername, action, entityType, entityId, oldValueMasked (JSON), newValueMasked (JSON), ipAddress, userAgent, createdAt. NO updatedAt. This is append-only.
+- [x] 1.17 Create Entity/FailedLoginAttempt.php — id, username, ipAddress, attemptedAt
+- [x] 1.18 Generate initial migration: php bin/console doctrine:migrations:diff. Verify SQL is correct.
+- [x] 1.19 Create DataFixtures or migration seed: INSERT 6 users (one per role) with bcrypt hashed passwords, basic shift schedules, sample exception rules, sample resources, sample work orders in various states, sample attendance records.
+- [x] 1.20 Verify: docker compose up --build → migrations run → all 6 logins work → MySQL has all tables.
 
 **Phase 1 checkpoint: docker compose up --build → migrations run → all 6 credentials log in successfully → MySQL tables visible.**
 

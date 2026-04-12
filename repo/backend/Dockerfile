@@ -101,10 +101,31 @@ SUPERVISOR_CONF
 COPY <<'ENTRYPOINT_SH' /entrypoint.sh
 #!/bin/sh
 set -e
-echo "Running database migrations..."
 cd /app/backend
+
+echo "Waiting for MySQL to be ready..."
+MAX_RETRIES=30
+RETRY=0
+until php bin/console doctrine:query:sql "SELECT 1" --env=prod 2>/dev/null || [ $RETRY -eq $MAX_RETRIES ]; do
+    RETRY=$((RETRY+1))
+    echo "  Waiting for database... ($RETRY/$MAX_RETRIES)"
+    sleep 2
+done
+
+echo "Clearing cache..."
+php bin/console cache:clear --env=prod --no-interaction 2>&1 || true
+
+echo "Running database migrations..."
 php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration 2>&1 || echo "Migrations skipped or failed"
-php bin/console doctrine:fixtures:load --no-interaction --append 2>&1 || echo "Fixtures skipped"
+
+echo "Loading fixtures (if database is empty)..."
+USER_COUNT=$(php bin/console doctrine:query:sql "SELECT COUNT(*) as c FROM \`user\`" --env=prod 2>/dev/null | grep -o '[0-9]*' | head -1 || echo "0")
+if [ "$USER_COUNT" = "0" ] || [ -z "$USER_COUNT" ]; then
+    php bin/console doctrine:fixtures:load --no-interaction --env=prod 2>&1 || echo "Fixtures skipped"
+else
+    echo "Database already has data ($USER_COUNT users), skipping fixtures."
+fi
+
 echo "Starting services..."
 exec /usr/bin/supervisord -c /etc/supervisor/conf.d/app.conf
 ENTRYPOINT_SH
