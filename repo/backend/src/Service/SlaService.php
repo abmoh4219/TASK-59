@@ -107,8 +107,9 @@ class SlaService
         $deadline = $step->getSlaDeadline();
 
         if ($now >= $deadline) {
-            // Overdue — return negative minutes
-            return -$this->countBusinessMinutes($deadline, $now);
+            // Overdue — return negative minutes (at least -1 to signal overdue)
+            $minutes = $this->countBusinessMinutes($deadline, $now);
+            return -max(1, $minutes);
         }
 
         return $this->countBusinessMinutes($now, $deadline);
@@ -160,57 +161,59 @@ class SlaService
 
     /**
      * Count business minutes between two DateTimeImmutable instances.
+     * Counts only minutes within Mon-Fri business hours (default 8-18).
      */
     private function countBusinessMinutes(\DateTimeImmutable $from, \DateTimeImmutable $to): int
     {
+        if ($from >= $to) {
+            return 0;
+        }
+
         $total = 0;
         $current = \DateTime::createFromImmutable($from);
-        $end = $to;
+        $endTs = $to->getTimestamp();
+        $businessStartMin = $this->businessStartHour * 60;
+        $businessEndMin = $this->businessEndHour * 60;
 
-        while ($current < $end) {
-            $dayOfWeek = (int) $current->format('N');
+        // Safety limit: 30 business days max
+        for ($safety = 0; $safety < 1000 && $current->getTimestamp() < $endTs; $safety++) {
+            $dayOfWeek = (int) $current->format('N'); // 1=Mon, 7=Sun
 
             // Skip weekends
             if ($dayOfWeek >= 6) {
-                $current->modify('next Monday');
+                $current->setTime($this->businessStartHour, 0);
+                $current->modify('+1 day');
+                continue;
+            }
+
+            $currentMin = (int) $current->format('G') * 60 + (int) $current->format('i');
+
+            // Before business hours: jump to start
+            if ($currentMin < $businessStartMin) {
                 $current->setTime($this->businessStartHour, 0);
                 continue;
             }
 
-            $currentMinuteOfDay = (int) $current->format('G') * 60 + (int) $current->format('i');
-            $businessStartMinute = $this->businessStartHour * 60;
-            $businessEndMinute = $this->businessEndHour * 60;
-
-            if ($currentMinuteOfDay < $businessStartMinute) {
-                $current->setTime($this->businessStartHour, 0);
-                $currentMinuteOfDay = $businessStartMinute;
-            }
-
-            if ($currentMinuteOfDay >= $businessEndMinute) {
+            // After business hours: jump to next day's start
+            if ($currentMin >= $businessEndMin) {
                 $current->modify('+1 day');
                 $current->setTime($this->businessStartHour, 0);
                 continue;
             }
 
-            $endImmutable = \DateTimeImmutable::createFromMutable($current)->modify('+1 minute');
-            if ($endImmutable > $end) {
-                break;
+            // Compute end-of-business-today as timestamp
+            $eodToday = clone $current;
+            $eodToday->setTime($this->businessEndHour, 0);
+            $eodTs = $eodToday->getTimestamp();
+
+            // Take minimum of end-of-day, $endTs
+            $limitTs = min($eodTs, $endTs);
+            $minutesToAdd = (int) (($limitTs - $current->getTimestamp()) / 60);
+            if ($minutesToAdd > 0) {
+                $total += $minutesToAdd;
             }
 
-            $minutesLeftToday = $businessEndMinute - $currentMinuteOfDay;
-            $endOfDayOrTarget = min(
-                $businessEndMinute,
-                (int) (new \DateTimeImmutable($end->format('Y-m-d') === $current->format('Y-m-d')
-                    ? $end->format('H:i')
-                    : "{$this->businessEndHour}:00"))->format('G') * 60 +
-                (int) (new \DateTimeImmutable($end->format('Y-m-d') === $current->format('Y-m-d')
-                    ? $end->format('H:i')
-                    : "{$this->businessEndHour}:00"))->format('i')
-            );
-
-            $minutesToCount = max(0, $endOfDayOrTarget - $currentMinuteOfDay);
-            $total += $minutesToCount;
-
+            // Advance to next business day start
             $current->modify('+1 day');
             $current->setTime($this->businessStartHour, 0);
         }

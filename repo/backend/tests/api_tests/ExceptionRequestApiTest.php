@@ -13,6 +13,15 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 class ExceptionRequestApiTest extends WebTestCase
 {
+    private static ?\Symfony\Bundle\FrameworkBundle\KernelBrowser $sharedClient = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        self::$sharedClient = null;
+        self::ensureKernelShutdown();
+    }
+
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
@@ -22,7 +31,10 @@ class ExceptionRequestApiTest extends WebTestCase
      */
     private function loginAs(string $username, string $password): array
     {
-        $client = static::createClient();
+        if (self::$sharedClient === null) {
+            self::$sharedClient = static::createClient();
+        }
+        $client = self::$sharedClient;
 
         $client->request(
             'POST',

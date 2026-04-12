@@ -42,10 +42,7 @@ class BookingIdempotencyTest extends TestCase
         $this->idempRepo    = $this->createMock(IdempotencyKeyRepository::class);
         $this->auditService = $this->createMock(AuditService::class);
 
-        // Silence all flush() and log() calls in passing tests.
-        $this->em->method('flush')->willReturn(null);
-        $this->em->method('persist')->willReturn(null);
-        $this->auditService->method('log')->willReturn(null);
+        // flush(), persist(), log() return void — no willReturn needed for void methods.
 
         $this->service = new BookingService(
             $this->em,

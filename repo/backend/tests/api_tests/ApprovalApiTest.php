@@ -13,13 +13,25 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 class ApprovalApiTest extends WebTestCase
 {
+    private static ?\Symfony\Bundle\FrameworkBundle\KernelBrowser $sharedClient = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        self::$sharedClient = null;
+        self::ensureKernelShutdown();
+    }
+
     // -------------------------------------------------------------------------
     // Helper: login and return [client, csrfToken]
     // -------------------------------------------------------------------------
 
     private function loginAs(string $username, string $password): array
     {
-        $client = static::createClient();
+        if (self::$sharedClient === null) {
+            self::$sharedClient = static::createClient();
+        }
+        $client = self::$sharedClient;
 
         $client->request(
             'POST',

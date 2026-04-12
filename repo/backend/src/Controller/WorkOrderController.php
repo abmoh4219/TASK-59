@@ -24,7 +24,40 @@ class WorkOrderController extends AbstractController
         private readonly WorkOrderRepository $workOrderRepository,
         private readonly WorkOrderPhotoRepository $photoRepository,
         private readonly RateLimitService $rateLimitService,
+        private readonly \App\Repository\UserRepository $userRepository,
     ) {
+    }
+
+    /**
+     * GET /api/work-orders/technicians — list available technicians (for dispatchers).
+     */
+    #[Route('/technicians', name: 'api_work_orders_technicians', methods: ['GET'], priority: 10)]
+    public function listTechnicians(): JsonResponse
+    {
+        /** @var User $user */
+        $user = $this->getUser();
+
+        // Allow dispatchers, admins, and HR admins to see technician list
+        $allowedRoles = ['ROLE_DISPATCHER', 'ROLE_ADMIN', 'ROLE_HR_ADMIN'];
+        $userRoles = $user->getRoles();
+        $allowed = false;
+        foreach ($allowedRoles as $role) {
+            if (in_array($role, $userRoles, true)) {
+                $allowed = true;
+                break;
+            }
+        }
+        if (!$allowed) {
+            return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
+        }
+
+        $technicians = $this->userRepository->findByRole('ROLE_TECHNICIAN');
+
+        return $this->json(array_map(fn($t) => [
+            'id' => $t->getId(),
+            'name' => $t->getFirstName() . ' ' . $t->getLastName(),
+            'isOut' => $t->isOut(),
+        ], $technicians));
     }
 
     /**

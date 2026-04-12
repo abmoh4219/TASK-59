@@ -23,6 +23,7 @@ import {
   Wrench,
 } from 'lucide-react';
 import { getWorkOrder, updateWorkOrderStatus, rateWorkOrder } from '../../api/workOrders';
+import apiClient from '../../api/client';
 import { useAuth } from '../../context/AuthContext';
 import type { WorkOrder, WorkOrderStatus, WorkOrderPriority } from '../../types';
 
@@ -255,10 +256,21 @@ function DispatcherPanel({
   workOrderId: number;
   onSuccess: () => void;
 }) {
-  // TODO: fetch technicians from API — currently hardcoded to fixture technician ID=6
-  const TECHNICIANS = [{ id: 6, name: 'Technician (ID 6)' }];
+  const { data: techniciansData } = useQuery<Array<{ id: number; name: string; isOut: boolean }>>({
+    queryKey: ['technicians'],
+    queryFn: async () => {
+      const res = await apiClient.get('/work-orders/technicians');
+      return res.data;
+    },
+  });
+  const TECHNICIANS = techniciansData || [];
 
-  const [technicianId, setTechnicianId] = useState<number>(TECHNICIANS[0].id);
+  const [technicianId, setTechnicianId] = useState<number>(0);
+
+  // When technicians load, default to first one
+  if (technicianId === 0 && TECHNICIANS.length > 0) {
+    setTechnicianId(TECHNICIANS[0].id);
+  }
   const queryClient = useQueryClient();
 
   const mutation = useMutation({

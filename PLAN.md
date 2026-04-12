@@ -248,18 +248,18 @@
 > Goal: All 4 test suites pass via Docker, static audit clean, zero broken features
 > Complete all tasks continuously, then pause. Wait for "proceed".
 
-- [ ] 9.1 Audit: grep -r "EntityManager\|createQuery\|->query\(" backend/src/ | grep -v "createQueryBuilder\|DQL\|repository" → verify no raw SQL string queries. All must use QueryBuilder or DQL.
-- [ ] 9.2 Audit: grep -r "AuditLog" backend/src/Repository/ → verify AuditLogRepository has ONLY select methods. No update/delete.
-- [ ] 9.3 Audit: grep -rn "console\.log\|var_dump\|dd(" backend/src/ frontend/src/ | grep -v "test\|spec" → must be zero results in production code.
-- [ ] 9.4 Audit: verify every API controller method calls $this->rateLimitService->check*() at the start. Add any missing calls.
-- [ ] 9.5 Audit: verify every state-changing controller method calls $this->auditService->log() before returning. Add any missing calls.
-- [ ] 9.6 Write any missing tests to complete all 4 suites:
+- [x] 9.1 Audit: grep -r "EntityManager\|createQuery\|->query\(" backend/src/ | grep -v "createQueryBuilder\|DQL\|repository" → verify no raw SQL string queries. All must use QueryBuilder or DQL.
+- [x] 9.2 Audit: grep -r "AuditLog" backend/src/Repository/ → verify AuditLogRepository has ONLY select methods. No update/delete.
+- [x] 9.3 Audit: grep -rn "console\.log\|var_dump\|dd(" backend/src/ frontend/src/ | grep -v "test\|spec" → must be zero results in production code.
+- [x] 9.4 Audit: verify every API controller method calls $this->rateLimitService->check*() at the start. Add any missing calls.
+- [x] 9.5 Audit: verify every state-changing controller method calls $this->auditService->log() before returning. Add any missing calls.
+- [x] 9.6 Write any missing tests to complete all 4 suites:
        Security: testCsrfMissingReturns403, testRateLimitReturns429, testLockedAccountReturns423, testApiSignatureMissingReturns401
        Attendance: testEngineRunsForAllUsers, testCsvImportSkipsDuplicates
        Privacy: testPhoneMaskedInApiResponse, testAuditLogRetainsAfterUserDeletion
        Work Orders: testPhotoCountLimit, testRatingStarRange
-- [ ] 9.7 Run: docker compose --profile test run --build test → fix ALL failures until all 4 suites show PASS and exit code is 0.
-- [ ] 9.8 Run: docker compose up --build → full end-to-end verification:
+- [x] 9.7 Run: docker compose --profile test run --build test → fix ALL failures until all 4 suites show PASS and exit code is 0.
+- [x] 9.8 Run: docker compose up --build → full end-to-end verification:
        Login as each of 6 roles → verify correct sidebar + dashboard
        Employee: submit exception request → see timeline → submit work order with photo
        Supervisor: approve the request → queue updates
@@ -268,8 +268,8 @@
        Technician: update to in_progress → complete
        Employee: rate the completed work order
        Admin: view audit log → all actions recorded → no delete button visible
-- [ ] 9.9 Verify: grep -r "TODO\|FIXME\|placeholder\|stub\|hardcode" backend/src/ frontend/src/ | grep -v "test\|spec\|\.md" → must be zero.
-- [ ] 9.10 Verify: docker compose --profile test run test exits with code 0 showing "ALL TESTS PASSED".
+- [x] 9.9 Verify: grep -r "TODO\|FIXME\|placeholder\|stub\|hardcode" backend/src/ frontend/src/ | grep -v "test\|spec\|\.md" → must be zero.
+- [x] 9.10 Verify: docker compose --profile test run test exits with code 0 showing "ALL TESTS PASSED".
 
 **Phase 9 checkpoint: docker compose --profile test run test → ALL TESTS PASSED exit 0. Full end-to-end scenario tested. Zero TODO/stub comments.**
 

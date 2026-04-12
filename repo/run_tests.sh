@@ -15,13 +15,19 @@ fi
 
 BACKEND_UNIT=0; BACKEND_API=0; FRONTEND_UNIT=0; FRONTEND_API=0
 
-echo "--- Backend Unit Tests (tests/unit_tests/) ---"
+# Prepare test database: run migrations and load fixtures
+echo "--- Preparing test database ---"
 cd /app/backend
-php bin/phpunit tests/unit_tests/ --testdox 2>&1 || BACKEND_UNIT=1
+php bin/console doctrine:database:create --if-not-exists --env=test 2>&1 || true
+php bin/console doctrine:migrations:migrate --no-interaction --env=test 2>&1 || true
+php bin/console doctrine:fixtures:load --no-interaction --env=test 2>&1 || true
+
+echo "--- Backend Unit Tests (tests/unit_tests/) ---"
+php vendor/bin/phpunit tests/unit_tests/ --testdox 2>&1 || BACKEND_UNIT=1
 [ $BACKEND_UNIT -eq 0 ] && echo "✅ Backend Unit PASSED" || echo "❌ Backend Unit FAILED"
 
 echo "--- Backend API Tests (tests/api_tests/) ---"
-php bin/phpunit tests/api_tests/ --testdox 2>&1 || BACKEND_API=1
+php vendor/bin/phpunit tests/api_tests/ --testdox 2>&1 || BACKEND_API=1
 [ $BACKEND_API -eq 0 ] && echo "✅ Backend API PASSED" || echo "❌ Backend API FAILED"
 
 echo "--- Frontend Unit Tests (tests/unit_tests/) ---"

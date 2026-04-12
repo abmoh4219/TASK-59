@@ -35,10 +35,8 @@ class WorkOrderStateMachineTest extends TestCase
         $this->fileService = $this->createMock(FileUploadService::class);
         $this->auditService = $this->createMock(AuditService::class);
 
-        // EntityManager::flush() is called by the service; suppress it silently.
-        $this->em->method('flush')->willReturn(null);
-        // AuditService::log() is called after every transition; suppress it.
-        $this->auditService->method('log')->willReturn(null);
+        // EntityManager::flush() and AuditService::log() return void — no willReturn needed.
+        // Mocks with no expectation simply succeed silently for void methods.
 
         $this->service = new WorkOrderService(
             $this->em,

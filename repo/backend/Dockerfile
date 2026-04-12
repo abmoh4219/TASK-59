@@ -140,7 +140,7 @@ CMD ["/entrypoint.sh"]
 # ---------- Test stage ----------
 FROM base AS test
 
-# Install dev dependencies for testing
+# Install dev dependencies for testing (PHPUnit etc.)
 RUN composer install --optimize-autoloader --no-interaction
 
 # Install Node.js for frontend tests

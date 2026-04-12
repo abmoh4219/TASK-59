@@ -18,17 +18,31 @@ use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
  */
 class WorkOrderApiTest extends WebTestCase
 {
+    private static ?\Symfony\Bundle\FrameworkBundle\KernelBrowser $sharedClient = null;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        self::$sharedClient = null;
+        self::ensureKernelShutdown();
+    }
+
     // -------------------------------------------------------------------------
     // Login helpers
     // -------------------------------------------------------------------------
 
     /**
      * Log in with the given credentials and return [client, csrfToken].
-     * The client's cookie jar retains the session cookie for subsequent requests.
+     * Reuses a single KernelBrowser to avoid re-booting the kernel.
      */
     private function loginAs(string $username, string $password): array
     {
-        $client = static::createClient();
+        if (self::$sharedClient === null) {
+            self::$sharedClient = static::createClient();
+        }
+        $client = self::$sharedClient;
+        // Clear cookies to force a new session for each login
+        $client->getCookieJar()->clear();
 
         $client->request(
             'POST',
@@ -196,6 +210,11 @@ class WorkOrderApiTest extends WebTestCase
         // Step 2 — dispatcher transitions it to 'dispatched'.
         [$dispClient, $dispCsrf] = $this->loginAsDispatcher();
 
+        // Look up the technician user ID dynamically (fixture IDs may vary)
+        $em = static::getContainer()->get(\Doctrine\ORM\EntityManagerInterface::class);
+        $technician = $em->getRepository(\App\Entity\User::class)->findOneBy(['username' => 'technician']);
+        $technicianId = $technician?->getId() ?? 6;
+
         $dispClient->request(
             'PATCH',
             "/api/work-orders/{$workOrderId}/status",
@@ -207,8 +226,7 @@ class WorkOrderApiTest extends WebTestCase
             ],
             json_encode([
                 'status' => 'dispatched',
-                // technicianId 6 is the seeded technician user (see README).
-                'technicianId' => 6,
+                'technicianId' => $technicianId,
             ])
         );
 

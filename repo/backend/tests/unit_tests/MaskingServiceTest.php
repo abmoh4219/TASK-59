@@ -19,13 +19,13 @@ class MaskingServiceTest extends TestCase
     public function testMaskPhoneFullUSWithCountryCode(): void
     {
         $result = $this->maskingService->maskPhone('+15551234567');
-        $this->assertSame('(555) ***-1234', $result);
+        $this->assertSame('(555) ***-4567', $result);
     }
 
     public function testMaskPhoneTenDigit(): void
     {
         $result = $this->maskingService->maskPhone('5551234567');
-        $this->assertSame('(555) ***-1234', $result);
+        $this->assertSame('(555) ***-4567', $result);
     }
 
     public function testMaskPhoneDifferentAreaCode(): void
