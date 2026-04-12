@@ -278,7 +278,7 @@
 ## PHASE 10 — Documentation Generation
 > Final phase — generate docs from actual implemented code.
 
-- [ ] 10.1 Create docs/design.md — from actual implemented code:
+- [x] 10.1 Create docs/design.md — from actual implemented code:
        ASCII architecture (React SPA → Nginx → Symfony API → MySQL)
        Docker service map (setup/mysql/backend/frontend/test/mysql-test)
        All Doctrine entities and their relationships
@@ -290,7 +290,7 @@
        Audit log design (why append-only, what triggers each action, 7-year retention)
        Privacy tiers (who sees what, masking rules, data deletion process)
 
-- [ ] 10.2 Create docs/api-spec.md — from actual implemented code:
+- [x] 10.2 Create docs/api-spec.md — from actual implemented code:
        Every API endpoint: method, path, role required, CSRF required, request body, response shape, error codes
        Auth endpoints (session + CSRF cookie behavior)
        File upload multipart spec (MIME types, size limits, hash dedup)
