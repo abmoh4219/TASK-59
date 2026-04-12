@@ -31,8 +31,9 @@ COPY . .
 # Run post-install scripts
 RUN composer run-script post-install-cmd --no-interaction 2>/dev/null || true
 
-# Create required directories
-RUN mkdir -p var/cache var/log /app/uploads \
+# Create required directories with proper permissions
+RUN mkdir -p var/cache/prod/doctrine/orm/Proxies var/log /app/uploads \
+    && chmod -R 777 var \
     && chown -R www-data:www-data var /app/uploads
 
 # Configure PHP-FPM
@@ -114,6 +115,7 @@ done
 
 echo "Clearing cache..."
 php bin/console cache:clear --env=prod --no-interaction 2>&1 || true
+chmod -R 777 var 2>/dev/null || true
 
 echo "Running database migrations..."
 php bin/console doctrine:migrations:migrate --no-interaction --allow-no-migration 2>&1 || echo "Migrations skipped or failed"
