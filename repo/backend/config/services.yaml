@@ -15,3 +15,13 @@ services:
     App\Controller\:
         resource: '../src/Controller/'
         tags: ['controller.service_arguments']
+
+    # Encryption service — key from env var
+    App\Service\EncryptionService:
+        arguments:
+            $appEncryptionKey: '%env(APP_ENCRYPTION_KEY)%'
+
+    # API signature authenticator — signing key from env var
+    App\Security\ApiSignatureAuthenticator:
+        arguments:
+            $appSigningKey: '%env(APP_SIGNING_KEY)%'

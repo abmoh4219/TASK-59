@@ -22,6 +22,8 @@ security:
                 check_path: /api/auth/login
                 username_path: username
                 password_path: password
+                success_handler: App\Security\AuthenticationSuccessHandler
+                failure_handler: App\Security\AuthenticationFailureHandler
             logout:
                 path: /api/auth/logout
 
