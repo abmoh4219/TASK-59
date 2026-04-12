@@ -56,10 +56,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const logout = useCallback(async () => {
-    await authApi.logout();
+    // Optimistic logout: clear local state immediately for instant UX,
+    // fire-and-forget the server-side logout in the background.
     setUser(null);
     setCsrfToken(null);
     localStorage.removeItem('csrf_token');
+    // Don't await — let navigation happen instantly
+    authApi.logout().catch(() => {
+      // Server-side logout failed (network/session already gone) — no-op
+    });
   }, []);
 
   const hasRole = useCallback(

@@ -36,12 +36,15 @@ export default function AttendanceCard() {
   const exceptions = (data.exceptions || []) as ExceptionType[];
 
   return (
-    <div className="bg-surface-card border border-surface-border rounded-xl p-6">
+    <div className="premium-card p-6 relative overflow-hidden">
+      {/* Gradient accent strip */}
+      <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-transparent via-accent/40 to-transparent" />
+
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex items-center justify-between mb-5">
         <div>
-          <h3 className="text-lg font-semibold text-white">Today's Attendance</h3>
-          <p className="text-sm text-gray-400">
+          <h3 className="text-lg font-bold text-white tracking-tight">Today's Attendance</h3>
+          <p className="text-xs text-gray-500 mt-0.5">
             {new Date(data.recordDate).toLocaleDateString('en-US', {
               weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
             })}
@@ -49,15 +52,15 @@ export default function AttendanceCard() {
         </div>
         {data.shiftStart && data.shiftEnd && (
           <div className="text-right">
-            <p className="text-xs text-gray-500">Shift</p>
-            <p className="text-sm text-gray-300">{data.shiftStart} – {data.shiftEnd}</p>
+            <p className="text-[10px] text-gray-600 uppercase tracking-widest font-semibold">Shift</p>
+            <p className="text-sm text-gray-300 font-medium mt-0.5">{data.shiftStart} – {data.shiftEnd}</p>
           </div>
         )}
       </div>
 
       {/* Exception Badges */}
       {exceptions.length > 0 && (
-        <div className="flex flex-wrap gap-2 mb-4">
+        <div className="flex flex-wrap gap-2 mb-5">
           {exceptions.map((exc) => (
             <ExceptionBadge key={exc} type={exc} />
           ))}
@@ -65,33 +68,33 @@ export default function AttendanceCard() {
       )}
 
       {/* Punch Timeline */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
-        <div className="bg-surface rounded-lg p-3 border border-surface-border">
-          <div className="flex items-center gap-2 mb-1">
+      <div className="grid grid-cols-3 gap-3 mb-4">
+        <div className="bg-gradient-to-br from-green-500/10 to-transparent rounded-xl p-4 border border-green-500/20">
+          <div className="flex items-center gap-2 mb-2">
             <LogIn size={14} className="text-green-400" />
-            <span className="text-xs text-gray-500">Clock In</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Clock In</span>
           </div>
-          <p className="text-lg font-semibold text-white">
+          <p className="text-xl font-bold text-white tracking-tight">
             {data.firstPunchIn || '—'}
           </p>
         </div>
 
-        <div className="bg-surface rounded-lg p-3 border border-surface-border">
-          <div className="flex items-center gap-2 mb-1">
+        <div className="bg-gradient-to-br from-red-500/10 to-transparent rounded-xl p-4 border border-red-500/20">
+          <div className="flex items-center gap-2 mb-2">
             <LogOut size={14} className="text-red-400" />
-            <span className="text-xs text-gray-500">Clock Out</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Clock Out</span>
           </div>
-          <p className="text-lg font-semibold text-white">
+          <p className="text-xl font-bold text-white tracking-tight">
             {data.lastPunchOut || '—'}
           </p>
         </div>
 
-        <div className="bg-surface rounded-lg p-3 border border-surface-border">
-          <div className="flex items-center gap-2 mb-1">
+        <div className="bg-gradient-to-br from-accent/10 to-transparent rounded-xl p-4 border border-accent/20">
+          <div className="flex items-center gap-2 mb-2">
             <Timer size={14} className="text-accent-light" />
-            <span className="text-xs text-gray-500">Total Hours</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-widest font-semibold">Total Hours</span>
           </div>
-          <p className="text-lg font-semibold text-white">
+          <p className="text-xl font-bold text-white tracking-tight">
             {hours}h {minutes}m
           </p>
         </div>

@@ -7,7 +7,7 @@ import apiClient from '../api/client';
 import type { ExceptionType, WorkOrder } from '../types';
 import {
   Clock, CheckSquare, Wrench, AlertTriangle, Users,
-  TrendingUp, FileWarning, ArrowRight, Activity,
+  FileWarning, ArrowRight, Activity, Sparkles,
 } from 'lucide-react';
 
 interface StatCardProps {
@@ -19,33 +19,58 @@ interface StatCardProps {
 }
 
 function StatCard({ icon, label, value, link, tone = 'accent' }: StatCardProps) {
-  const toneMap: Record<string, { bg: string; text: string }> = {
-    accent: { bg: 'bg-accent/10', text: 'text-accent-light' },
-    red: { bg: 'bg-red-500/10', text: 'text-red-400' },
-    amber: { bg: 'bg-amber-500/10', text: 'text-amber-400' },
-    green: { bg: 'bg-green-500/10', text: 'text-green-400' },
+  const toneMap: Record<string, { bg: string; text: string; glow: string; border: string }> = {
+    accent: {
+      bg: 'bg-gradient-to-br from-accent/20 to-accent-dark/10',
+      text: 'text-accent-light',
+      glow: 'from-accent/10',
+      border: 'hover:border-accent/40',
+    },
+    red: {
+      bg: 'bg-gradient-to-br from-red-500/20 to-red-600/10',
+      text: 'text-red-400',
+      glow: 'from-red-500/10',
+      border: 'hover:border-red-500/40',
+    },
+    amber: {
+      bg: 'bg-gradient-to-br from-amber-500/20 to-orange-500/10',
+      text: 'text-amber-400',
+      glow: 'from-amber-500/10',
+      border: 'hover:border-amber-500/40',
+    },
+    green: {
+      bg: 'bg-gradient-to-br from-green-500/20 to-emerald-600/10',
+      text: 'text-green-400',
+      glow: 'from-green-500/10',
+      border: 'hover:border-green-500/40',
+    },
   };
   const colors = toneMap[tone];
 
   const content = (
-    <div className="bg-surface-card border border-surface-border rounded-xl p-5 hover:border-accent/40 hover:shadow-glow transition-all">
-      <div className="flex items-start justify-between mb-3">
-        <div className={`w-10 h-10 rounded-lg ${colors.bg} ${colors.text} flex items-center justify-center`}>
+    <div className={`group relative premium-card premium-card-hover p-6 overflow-hidden ${colors.border}`}>
+      {/* Subtle glow on hover */}
+      <div
+        className={`absolute -top-20 -right-20 w-40 h-40 bg-gradient-to-br ${colors.glow} to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-full blur-3xl`}
+      />
+
+      <div className="relative flex items-start justify-between mb-4">
+        <div className={`w-11 h-11 rounded-xl ${colors.bg} ${colors.text} flex items-center justify-center border border-white/10 shadow-inner-glow`}>
           {icon}
         </div>
+        {link && (
+          <div className="text-gray-600 group-hover:text-accent-light group-hover:translate-x-0.5 transition-all">
+            <ArrowRight size={16} />
+          </div>
+        )}
       </div>
-      <div>
-        <p className="text-xs text-gray-500 uppercase tracking-wide mb-1">{label}</p>
-        <p className="text-2xl font-bold text-white">{value}</p>
+      <div className="relative">
+        <p className="text-[11px] text-gray-500 uppercase tracking-wider font-semibold mb-1.5">{label}</p>
+        <p className="text-3xl font-bold text-white tracking-tight">{value}</p>
       </div>
-      {link && (
-        <div className="mt-3 flex items-center gap-1 text-xs text-accent-light">
-          View <ArrowRight size={12} />
-        </div>
-      )}
     </div>
   );
-  return link ? <Link to={link}>{content}</Link> : content;
+  return link ? <Link to={link} className="block">{content}</Link> : content;
 }
 
 function EmployeeDashboard() {
@@ -277,44 +302,28 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">
-          Welcome back, {user.firstName}
-        </h1>
-        <p className="text-sm text-gray-400 mt-1">
-          {roleLabels[user.role]} &middot; {new Date().toLocaleDateString('en-US', {
-            weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
-          })}
-        </p>
+    <div className="space-y-8 animate-slide-up">
+      <div className="flex items-start justify-between">
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles size={14} className="text-accent-light" />
+            <span className="text-xs font-semibold text-accent-light uppercase tracking-widest">
+              {roleLabels[user.role]} Dashboard
+            </span>
+          </div>
+          <h1 className="text-4xl font-bold tracking-tight">
+            <span className="text-white">Welcome back, </span>
+            <span className="text-gradient">{user.firstName}</span>
+          </h1>
+          <p className="text-sm text-gray-500 mt-2">
+            {new Date().toLocaleDateString('en-US', {
+              weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+            })}
+          </p>
+        </div>
       </div>
 
       {dashboard}
-
-      <div className="bg-surface-card border border-surface-border rounded-xl p-5">
-        <h3 className="text-sm font-semibold text-white mb-3 flex items-center gap-2">
-          <TrendingUp size={16} className="text-accent-light" />
-          System Health
-        </h3>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-          <div>
-            <p className="text-xs text-gray-500">Backend</p>
-            <p className="text-green-400 font-medium">● Operational</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Database</p>
-            <p className="text-green-400 font-medium">● Connected</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Auth</p>
-            <p className="text-green-400 font-medium">● Active</p>
-          </div>
-          <div>
-            <p className="text-xs text-gray-500">Session</p>
-            <p className="text-green-400 font-medium">● Secure</p>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }

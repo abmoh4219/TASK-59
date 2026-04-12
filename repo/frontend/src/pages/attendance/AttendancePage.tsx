@@ -27,13 +27,16 @@ export default function AttendancePage() {
   const canFileRequest = hasExceptions;
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 animate-slide-up">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-white">Attendance</h1>
+        <div>
+          <h1 className="text-3xl font-bold tracking-tight text-white">Attendance</h1>
+          <p className="text-sm text-gray-500 mt-1">Track your daily attendance and submit exception requests</p>
+        </div>
         {canFileRequest && (
           <button
             onClick={() => navigate('/attendance/request')}
-            className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-accent to-accent-dark rounded-lg text-white text-sm font-medium hover:shadow-glow transition-all"
+            className="btn-primary"
           >
             <Plus size={16} />
             Submit Request
