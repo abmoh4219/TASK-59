@@ -214,9 +214,9 @@
 > QA manually clicks every page — must look and feel like a premium paid product.
 > Complete all tasks continuously, then pause. Wait for "proceed".
 
-- [ ] 8.1 Create frontend/src/components/layout/TopBar.tsx — sticky top bar with: breadcrumb navigation, page title, notification bell (anomaly alerts for admin), user avatar with role badge, sign out button. Dark slate background, subtle border-bottom.
-- [ ] 8.2 Create frontend/src/components/layout/Layout.tsx — wrapper: sidebar (240px, fixed, dark gradient) + main content area (scroll, light dark bg). Sidebar shows ScholarVault→ "Workforce Hub" logo at top. Mobile-responsive hamburger.
-- [ ] 8.3 Create frontend/src/components/ui/ complete set — all styled per CLAUDE.md design system:
+- [x] 8.1 Create frontend/src/components/layout/TopBar.tsx — sticky top bar with: breadcrumb navigation, page title, notification bell (anomaly alerts for admin), user avatar with role badge, sign out button. Dark slate background, subtle border-bottom.
+- [x] 8.2 Create frontend/src/components/layout/Layout.tsx — wrapper: sidebar (240px, fixed, dark gradient) + main content area (scroll, light dark bg). Sidebar shows ScholarVault→ "Workforce Hub" logo at top. Mobile-responsive hamburger.
+- [x] 8.3 Create frontend/src/components/ui/ complete set — all styled per CLAUDE.md design system:
        Button.tsx: Primary (indigo gradient), Secondary (bordered), Danger (red-tinted), Ghost — all with loading spinner
        Card.tsx: dark surface, 1px border, rounded-xl, hover shadow
        Badge.tsx: exception badges (LATE=amber, MISSED=red, ABSENT=red, EARLY=orange, OFFSITE=green), work order status badges (all from CLAUDE.md), role badges
@@ -225,20 +225,20 @@
        Skeleton.tsx: shimmer animation
        EmptyState.tsx: centered icon + heading + action button
        Timeline.tsx: vertical step timeline with status icons
-- [ ] 8.4 Create frontend/src/pages/Dashboard.tsx — role-specific dashboards:
+- [x] 8.4 Create frontend/src/pages/Dashboard.tsx — role-specific dashboards:
        Employee: today's attendance card summary, any pending exception requests, recent work orders
        Supervisor: pending approval count badge, overdue items in red, quick approve links
        HR Admin: pending policy overrides, anomaly alerts, user stats
        Dispatcher: unassigned work orders count, high priority items
        Technician: assigned work orders, in-progress items
        Admin: system health cards (total users, today's exceptions, pending approvals, open work orders)
-- [ ] 8.5 Final pass — ALL pages loading/empty/error states — verify every page has skeleton, empty state, error retry
-- [ ] 8.6 Final pass — Sidebar role-gating verified — each of the 6 roles only sees their permitted items. Test by logging in as each role.
-- [ ] 8.7 Final pass — All forms submit to real API. Verify no form has an onClick that does console.log or nothing. All mutations use axios POST/PATCH/DELETE with real endpoints.
-- [ ] 8.8 Final pass — Mobile responsive check — sidebar collapses on mobile, tables scroll horizontally, forms stack vertically.
-- [ ] 8.9 Fill in frontend/tests/api_tests/auth.api.test.ts — testLoginSuccess(), testLoginFails401(), testCsrfAttachedToRequests(), testLogoutClearsSession()
-- [ ] 8.10 Fill in frontend/tests/api_tests/attendance.api.test.ts — testFetchTodayCard(), testSubmitExceptionRequest(), testFetchRequestTimeline()
-- [ ] 8.11 Verify: docker compose up --build → all 6 logins work → each role sees correct sidebar → dashboard shows real data → no broken pages.
+- [x] 8.5 Final pass — ALL pages loading/empty/error states — verify every page has skeleton, empty state, error retry
+- [x] 8.6 Final pass — Sidebar role-gating verified — each of the 6 roles only sees their permitted items. Test by logging in as each role.
+- [x] 8.7 Final pass — All forms submit to real API. Verify no form has an onClick that does console.log or nothing. All mutations use axios POST/PATCH/DELETE with real endpoints.
+- [x] 8.8 Final pass — Mobile responsive check — sidebar collapses on mobile, tables scroll horizontally, forms stack vertically.
+- [x] 8.9 Fill in frontend/tests/api_tests/auth.api.test.ts — testLoginSuccess(), testLoginFails401(), testCsrfAttachedToRequests(), testLogoutClearsSession()
+- [x] 8.10 Fill in frontend/tests/api_tests/attendance.api.test.ts — testFetchTodayCard(), testSubmitExceptionRequest(), testFetchRequestTimeline()
+- [x] 8.11 Verify: docker compose up --build → all 6 logins work → each role sees correct sidebar → dashboard shows real data → no broken pages.
 
 **Phase 8 checkpoint: QA logs in as each of 6 roles → correct sidebar items → premium dark UI throughout → all features work end-to-end → no placeholder content anywhere.**
 
