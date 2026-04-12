@@ -113,11 +113,18 @@ export interface WorkOrder {
   room: string;
   status: WorkOrderStatus;
   submittedByName: string;
+  submittedById: number;
   assignedTechnicianName: string | null;
+  assignedTechnicianId: number | null;
+  assignedDispatcherName: string | null;
   rating: number | null;
   completionNotes: string | null;
   createdAt: string;
+  dispatchedAt: string | null;
+  acceptedAt: string | null;
+  startedAt: string | null;
   completedAt: string | null;
+  ratedAt: string | null;
   photos: WorkOrderPhoto[];
 }
 
