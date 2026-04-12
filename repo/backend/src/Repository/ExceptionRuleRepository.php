@@ -25,7 +25,7 @@ class ExceptionRuleRepository extends ServiceEntityRepository
     {
         return $this->createQueryBuilder('r')
             ->where('r.isActive = true')
-            ->orderBy('r.priority', 'ASC')
+            ->orderBy('r.ruleType', 'ASC')
             ->getQuery()
             ->getResult();
     }
