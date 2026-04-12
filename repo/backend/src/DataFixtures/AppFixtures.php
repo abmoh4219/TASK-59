@@ -11,6 +11,7 @@ use App\Entity\Resource;
 use App\Entity\ShiftSchedule;
 use App\Entity\User;
 use App\Entity\WorkOrder;
+use App\Service\EncryptionService;
 use Doctrine\Bundle\FixturesBundle\Fixture;
 use Doctrine\Persistence\ObjectManager;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
@@ -19,6 +20,7 @@ class AppFixtures extends Fixture
 {
     public function __construct(
         private readonly UserPasswordHasherInterface $passwordHasher,
+        private readonly EncryptionService $encryptionService,
     ) {
     }
 
@@ -229,7 +231,7 @@ class AppFixtures extends Fixture
         $user->setRole($role);
         $user->setFirstName($firstName);
         $user->setLastName($lastName);
-        $user->setPhoneEncrypted($phone); // Will be encrypted by EncryptionService in Phase 2
+        $user->setPhoneEncrypted($this->encryptionService->encrypt($phone));
         $user->setIsActive(true);
 
         $hashedPassword = $this->passwordHasher->hashPassword($user, $plainPassword);

@@ -4,6 +4,7 @@ namespace App\Controller;
 
 use App\Entity\User;
 use App\Service\AuditService;
+use App\Service\EncryptionService;
 use App\Service\MaskingService;
 use App\Service\RateLimitService;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -19,6 +20,7 @@ class AuthController extends AbstractController
         private readonly AuditService $auditService,
         private readonly MaskingService $maskingService,
         private readonly RateLimitService $rateLimitService,
+        private readonly EncryptionService $encryptionService,
     ) {
     }
 
@@ -80,11 +82,22 @@ class AuthController extends AbstractController
             $request->getSession()->set('csrf_token', $csrfToken);
         }
 
-        // Mask phone for non-HR_ADMIN roles
-        $phone = $user->getPhoneEncrypted();
-        $isHrAdmin = in_array('ROLE_HR_ADMIN', $user->getRoles()) || in_array('ROLE_ADMIN', $user->getRoles());
-        if (!$isHrAdmin && $phone !== null) {
-            $phone = $this->maskingService->maskPhone($phone);
+        // Tiered phone access: HR_ADMIN and ADMIN get decrypted full value; others get masked.
+        $phone = null;
+        $phoneEnc = $user->getPhoneEncrypted();
+        if ($phoneEnc !== null) {
+            // Attempt to decrypt; if value is plaintext (not yet encrypted), use as-is
+            try {
+                $phone = $this->encryptionService->decrypt($phoneEnc);
+            } catch (\Throwable) {
+                $phone = $phoneEnc;
+            }
+
+            $isHrAdmin = in_array('ROLE_HR_ADMIN', $user->getRoles(), true)
+                || in_array('ROLE_ADMIN', $user->getRoles(), true);
+            if (!$isHrAdmin) {
+                $phone = $this->maskingService->maskPhone($phone);
+            }
         }
 
         return $this->json([
