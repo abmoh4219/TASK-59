@@ -10,7 +10,7 @@ import {
   Clock,
   FileText,
 } from 'lucide-react';
-import { getRequestDetail, withdrawRequest } from '../../api/attendance';
+import { getRequestDetail, withdrawRequest, reassignRequestApprover } from '../../api/attendance';
 import ApprovalTimeline from '../../components/attendance/ApprovalTimeline';
 import type { RequestStatus, RequestType } from '../../types';
 
@@ -144,6 +144,90 @@ function WithdrawConfirm({
   );
 }
 
+// ---- Reassign modal ----
+
+function ReassignModal({
+  requestId,
+  onClose,
+  onDone,
+}: {
+  requestId: number;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [newApproverId, setNewApproverId] = useState('');
+  const [reason, setReason] = useState('');
+  const [error, setError] = useState<string | null>(null);
+
+  const mutation = useMutation({
+    mutationFn: () => {
+      const id = parseInt(newApproverId, 10);
+      if (Number.isNaN(id) || id <= 0) {
+        return Promise.reject(new Error('Enter a valid approver user ID'));
+      }
+      return reassignRequestApprover(requestId, id, reason);
+    },
+    onSuccess: () => onDone(),
+    onError: (err) =>
+      setError(
+        (err as { response?: { data?: { error?: string } } })?.response?.data?.error ??
+          (err as Error)?.message ??
+          'Reassign failed.',
+      ),
+  });
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+      <div className="bg-surface-card border border-surface-border rounded-xl p-6 max-w-sm w-full shadow-glow-lg space-y-4">
+        <div>
+          <h3 className="text-base font-semibold text-white">Reassign Approver</h3>
+          <p className="text-sm text-gray-400">
+            The current approver is out of office. Assign this step to a different approver.
+          </p>
+        </div>
+        <input
+          type="number"
+          min={1}
+          value={newApproverId}
+          onChange={(e) => setNewApproverId(e.target.value)}
+          placeholder="New approver user ID"
+          className="w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder-gray-500"
+        />
+        <textarea
+          value={reason}
+          onChange={(e) => setReason(e.target.value)}
+          rows={3}
+          placeholder="Reason (optional)"
+          className="w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder-gray-500 resize-none"
+        />
+        {error && (
+          <div className="flex items-center gap-2">
+            <AlertCircle size={14} className="text-red-400 flex-shrink-0" />
+            <p className="text-xs text-red-300">{error}</p>
+          </div>
+        )}
+        <div className="flex gap-3 justify-end">
+          <button
+            onClick={onClose}
+            disabled={mutation.isPending}
+            className="px-4 py-2 text-sm text-gray-400 hover:text-white transition-colors"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => mutation.mutate()}
+            disabled={mutation.isPending}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-amber-600 hover:bg-amber-700 disabled:opacity-60 text-white text-sm font-medium rounded-lg transition-colors"
+          >
+            {mutation.isPending && <Loader2 size={14} className="animate-spin" />}
+            Reassign
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ---- Main page ----
 
 export default function RequestDetailPage() {
@@ -151,6 +235,7 @@ export default function RequestDetailPage() {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showWithdrawConfirm, setShowWithdrawConfirm] = useState(false);
+  const [showReassign, setShowReassign] = useState(false);
 
   const requestId = Number(id);
 
@@ -223,9 +308,10 @@ export default function RequestDetailPage() {
     request.steps.length > 0 &&
     request.steps[0].actedAt === null;
 
-  // Check if any approver in the current pending step is marked out
+  // Check if any approver in the current pending step is marked out.
+  // approverIsOut is surfaced by the backend in ExceptionRequestController::serializeRequest.
   const pendingStep = request.steps.find((s) => s.status === 'PENDING');
-  const approverIsOut = false; // isOut flag lives on the User entity; not surfaced on ApprovalStep
+  const approverIsOut = Boolean(pendingStep?.approverIsOut);
 
   const formatDate = (d: string) =>
     new Date(d + 'T00:00:00').toLocaleDateString('en-US', {
@@ -242,6 +328,17 @@ export default function RequestDetailPage() {
           onConfirm={() => withdrawMutation.mutate()}
           onCancel={() => setShowWithdrawConfirm(false)}
           isPending={withdrawMutation.isPending}
+        />
+      )}
+
+      {showReassign && pendingStep && (
+        <ReassignModal
+          requestId={requestId}
+          onClose={() => setShowReassign(false)}
+          onDone={() => {
+            setShowReassign(false);
+            queryClient.invalidateQueries({ queryKey: ['requests', requestId] });
+          }}
         />
       )}
 
@@ -277,12 +374,12 @@ export default function RequestDetailPage() {
             </button>
           )}
           {approverIsOut && pendingStep && (
-            <Link
-              to={`/approvals/reassign/${pendingStep.id}`}
+            <button
+              onClick={() => setShowReassign(true)}
               className="inline-flex items-center gap-2 px-4 py-2 bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 text-sm font-medium rounded-lg transition-colors"
             >
               Reassign Approver
-            </Link>
+            </button>
           )}
         </div>
       </div>

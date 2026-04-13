@@ -35,6 +35,22 @@ class WorkOrderApiTest extends WebTestCase
      * Log in with the given credentials and return [client, csrfToken].
      * Reuses a single KernelBrowser to avoid re-booting the kernel.
      */
+    /**
+     * Compute session-bound HMAC signature for privileged writes.
+     *
+     * @return array{signature: string, timestamp: string}
+     */
+    private function sign(string $method, string $path, string $body, string $key): array
+    {
+        $timestamp = (string) time();
+        $bodyHash = hash('sha256', $body);
+        $payload = $method . $path . $timestamp . $bodyHash;
+        return [
+            'signature' => hash_hmac('sha256', $payload, $key),
+            'timestamp' => $timestamp,
+        ];
+    }
+
     private function loginAs(string $username, string $password): array
     {
         if (self::$sharedClient === null) {
@@ -215,19 +231,23 @@ class WorkOrderApiTest extends WebTestCase
         $technician = $em->getRepository(\App\Entity\User::class)->findOneBy(['username' => 'technician']);
         $technicianId = $technician?->getId() ?? 6;
 
+        $dispBody = json_encode([
+            'status' => 'dispatched',
+            'technicianId' => $technicianId,
+        ]);
+        $sig = $this->sign('PATCH', "/api/work-orders/{$workOrderId}/status", $dispBody, $dispCsrf);
         $dispClient->request(
             'PATCH',
             "/api/work-orders/{$workOrderId}/status",
             [],
             [],
             [
-                'CONTENT_TYPE'      => 'application/json',
-                'HTTP_X-CSRF-TOKEN' => $dispCsrf,
+                'CONTENT_TYPE'         => 'application/json',
+                'HTTP_X-CSRF-TOKEN'    => $dispCsrf,
+                'HTTP_X-Api-Signature' => $sig['signature'],
+                'HTTP_X-Timestamp'     => $sig['timestamp'],
             ],
-            json_encode([
-                'status' => 'dispatched',
-                'technicianId' => $technicianId,
-            ])
+            $dispBody
         );
 
         $this->assertResponseStatusCodeSame(200, 'Dispatcher must be allowed to dispatch the work order');
@@ -382,17 +402,23 @@ class WorkOrderApiTest extends WebTestCase
         $wo   = json_decode($client->getResponse()->getContent(), true);
         $woId = $wo['id'];
 
-        // Now try to dispatch it as the same employee — must fail.
+        // Now try to dispatch it as the same employee — must fail (state machine
+        // rejects non-dispatcher roles). Sign the privileged write so the
+        // signature listener does not short-circuit the role check first.
+        $dispatchBody = json_encode(['status' => 'dispatched']);
+        $sig = $this->sign('PATCH', "/api/work-orders/{$woId}/status", $dispatchBody, $csrfToken);
         $client->request(
             'PATCH',
             "/api/work-orders/{$woId}/status",
             [],
             [],
             [
-                'CONTENT_TYPE'      => 'application/json',
-                'HTTP_X-CSRF-TOKEN' => $csrfToken,
+                'CONTENT_TYPE'         => 'application/json',
+                'HTTP_X-CSRF-TOKEN'    => $csrfToken,
+                'HTTP_X-Api-Signature' => $sig['signature'],
+                'HTTP_X-Timestamp'     => $sig['timestamp'],
             ],
-            json_encode(['status' => 'dispatched'])
+            $dispatchBody
         );
 
         $this->assertResponseStatusCodeSame(

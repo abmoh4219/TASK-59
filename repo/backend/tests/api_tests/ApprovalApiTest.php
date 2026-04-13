@@ -26,6 +26,24 @@ class ApprovalApiTest extends WebTestCase
     // Helper: login and return [client, csrfToken]
     // -------------------------------------------------------------------------
 
+    /**
+     * Compute the session-bound HMAC signature for a privileged write.
+     * Mirrors the scheme used by the browser client interceptor and by
+     * ApiSignatureAuthenticator::validate().
+     *
+     * @return array{signature: string, timestamp: string}
+     */
+    private function sign(string $method, string $path, string $body, string $key): array
+    {
+        $timestamp = (string) time();
+        $bodyHash = hash('sha256', $body);
+        $payload = $method . $path . $timestamp . $bodyHash;
+        return [
+            'signature' => hash_hmac('sha256', $payload, $key),
+            'timestamp' => $timestamp,
+        ];
+    }
+
     private function loginAs(string $username, string $password): array
     {
         if (self::$sharedClient === null) {
@@ -124,17 +142,21 @@ class ApprovalApiTest extends WebTestCase
             'The newly created approval step must appear in the supervisor queue',
         );
 
-        // Step 3 — Supervisor approves step 1
+        // Step 3 — Supervisor approves step 1 (privileged write: requires signature)
+        $approveBody = json_encode(['comment' => 'Approved during automated test']);
+        $sig = $this->sign('POST', "/api/approvals/{$stepId}/approve", $approveBody, $supervisorCsrf);
         $supervisorClient->request(
             'POST',
             "/api/approvals/{$stepId}/approve",
             [],
             [],
             [
-                'CONTENT_TYPE'      => 'application/json',
-                'HTTP_X-CSRF-Token' => $supervisorCsrf,
+                'CONTENT_TYPE'         => 'application/json',
+                'HTTP_X-CSRF-Token'    => $supervisorCsrf,
+                'HTTP_X-Api-Signature' => $sig['signature'],
+                'HTTP_X-Timestamp'     => $sig['timestamp'],
             ],
-            json_encode(['comment' => 'Approved during automated test'])
+            $approveBody
         );
 
         $this->assertResponseStatusCodeSame(200, 'Supervisor should be able to approve step 1');

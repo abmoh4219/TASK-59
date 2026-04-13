@@ -15,6 +15,19 @@ use Symfony\Bundle\FrameworkBundle\KernelBrowser;
  */
 class BookingApiTest extends WebTestCase
 {
+    /**
+     * Clear leftover bookings from prior runs so the fixed-time-slot tests below
+     * never collide with stale data in the persistent test database.
+     */
+    public static function setUpBeforeClass(): void
+    {
+        static::createClient();
+        $em = static::getContainer()->get('doctrine.orm.entity_manager');
+        $em->createQuery('DELETE FROM App\Entity\BookingAllocation a')->execute();
+        $em->createQuery('DELETE FROM App\Entity\Booking b')->execute();
+        static::ensureKernelShutdown();
+    }
+
     // -------------------------------------------------------------------------
     // Login helper
     // -------------------------------------------------------------------------

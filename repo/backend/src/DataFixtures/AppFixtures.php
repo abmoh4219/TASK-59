@@ -39,6 +39,17 @@ class AppFixtures extends Fixture
         // Set backup approvers
         $supervisor->setBackupApproverId($hrAdmin->getId());
 
+        // Flush so the auto-generated IDs are available before we link the
+        // requester->supervisor relationship below.
+        $manager->flush();
+
+        // Requester->supervisor linkage. Approval step 1 routes to the
+        // requester's own supervisor via this field (see
+        // ApprovalWorkflowService::resolveSupervisorFor()).
+        $employee->setSupervisorId($supervisor->getId());
+        $technician->setSupervisorId($supervisor->getId());
+        $dispatcher->setSupervisorId($supervisor->getId());
+
         $manager->flush();
 
         // =========================================

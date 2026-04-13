@@ -352,8 +352,9 @@ class BookingIdempotencyTest extends TestCase
         $booking->setRequester($requester);
         $booking->setStatus('cancelled');
 
+        // The strict state machine rejects cancelled -> cancelled.
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Only active bookings can be cancelled');
+        $this->expectExceptionMessage('Invalid booking transition');
 
         $this->service->cancelBooking($booking, $requester);
     }

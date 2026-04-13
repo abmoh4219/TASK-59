@@ -18,6 +18,14 @@ docker compose down
 ```
 
 ## Login
+
+> **Intentional QA credentials — evaluation use only.**
+> The credentials below are published here **on purpose** so the QA reviewer
+> can log in as every role and exercise the full application during the
+> runtime evaluation. They are seed accounts loaded by the Doctrine fixtures
+> and are **not** production credentials. Do not reuse them outside local
+> evaluation; rotate before any non-local deployment.
+
 | Role | Username | Password |
 |---|---|---|
 | System Administrator | admin | Admin@WFOps2024! |

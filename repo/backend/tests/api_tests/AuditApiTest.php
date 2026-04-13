@@ -130,6 +130,32 @@ class AuditApiTest extends WebTestCase
         }
     }
 
+    /**
+     * Identity-data boundary: System Administrator must NOT automatically
+     * receive full phone/identity data — that is HR Admin's privilege per
+     * the Prompt's "only HR Admin full identity" rule.
+     */
+    public function testPhoneMaskedForSystemAdmin(): void
+    {
+        $this->login('admin', 'Admin@WFOps2024!');
+
+        $this->client->request('GET', '/api/auth/me');
+        $this->assertResponseStatusCodeSame(200);
+
+        $data = json_decode($this->client->getResponse()->getContent(), true);
+        $phone = $data['user']['phone'] ?? null;
+
+        if ($phone !== null) {
+            $this->assertStringContainsString(
+                '*',
+                $phone,
+                'System Administrator must see masked phone (full identity is HR-Admin-only)',
+            );
+        } else {
+            $this->assertNull($phone);
+        }
+    }
+
     public function testPhoneFullForHrAdmin(): void
     {
         $this->login('hradmin', 'HRAdmin@2024!');

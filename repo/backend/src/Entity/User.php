@@ -44,6 +44,15 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     #[ORM\Column(type: 'integer', nullable: true)]
     private ?int $backupApproverId = null;
 
+    /**
+     * Requester→supervisor linkage. Every ROLE_EMPLOYEE / non-supervisory
+     * user should reference their own supervisor's user ID. Approval step 1
+     * is routed to this specific supervisor rather than a global-first
+     * lookup, enforcing real ownership semantics.
+     */
+    #[ORM\Column(type: 'integer', nullable: true)]
+    private ?int $supervisorId = null;
+
     #[ORM\Column(type: 'boolean')]
     private bool $isOut = false;
 
@@ -55,6 +64,19 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     #[ORM\Column(type: 'datetime_immutable', nullable: true)]
     private ?\DateTimeImmutable $deletedAt = null;
+
+    /**
+     * Timestamp set when the user themselves requested data deletion.
+     * An admin subsequently runs the retention-safe anonymization
+     * (AdminController::deleteUserData) which sets $deletedAt. Keeping the
+     * two columns separate preserves the audit trail of "requested" vs
+     * "executed" deletion.
+     */
+    #[ORM\Column(type: 'datetime_immutable', nullable: true)]
+    private ?\DateTimeImmutable $deletionRequestedAt = null;
+
+    #[ORM\Column(type: 'text', nullable: true)]
+    private ?string $deletionRequestReason = null;
 
     #[ORM\Column(type: 'datetime_immutable')]
     private \DateTimeImmutable $createdAt;
@@ -188,6 +210,17 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
         return $this;
     }
 
+    public function getSupervisorId(): ?int
+    {
+        return $this->supervisorId;
+    }
+
+    public function setSupervisorId(?int $supervisorId): self
+    {
+        $this->supervisorId = $supervisorId;
+        return $this;
+    }
+
     public function isOut(): bool
     {
         return $this->isOut;
@@ -229,6 +262,28 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setDeletedAt(?\DateTimeImmutable $deletedAt): self
     {
         $this->deletedAt = $deletedAt;
+        return $this;
+    }
+
+    public function getDeletionRequestedAt(): ?\DateTimeImmutable
+    {
+        return $this->deletionRequestedAt;
+    }
+
+    public function setDeletionRequestedAt(?\DateTimeImmutable $value): self
+    {
+        $this->deletionRequestedAt = $value;
+        return $this;
+    }
+
+    public function getDeletionRequestReason(): ?string
+    {
+        return $this->deletionRequestReason;
+    }
+
+    public function setDeletionRequestReason(?string $value): self
+    {
+        $this->deletionRequestReason = $value;
         return $this;
     }
 

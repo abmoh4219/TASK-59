@@ -24,6 +24,24 @@ use Doctrine\ORM\EntityManagerInterface;
  */
 class BookingService
 {
+    // Explicit booking state machine (Prompt: strict state machine).
+    public const STATE_PENDING = 'pending';
+    public const STATE_ACTIVE = 'active';
+    public const STATE_COMPLETED = 'completed';
+    public const STATE_CANCELLED = 'cancelled';
+
+    /**
+     * Allowed transitions map. New bookings enter STATE_ACTIVE directly
+     * (auto-confirmed after conflict check); STATE_PENDING is reserved for
+     * future workflows that require manual confirmation.
+     */
+    private const ALLOWED_TRANSITIONS = [
+        self::STATE_PENDING => [self::STATE_ACTIVE, self::STATE_CANCELLED],
+        self::STATE_ACTIVE => [self::STATE_COMPLETED, self::STATE_CANCELLED],
+        self::STATE_COMPLETED => [],
+        self::STATE_CANCELLED => [],
+    ];
+
     public function __construct(
         private readonly EntityManagerInterface $entityManager,
         private readonly BookingRepository $bookingRepository,
@@ -109,45 +127,84 @@ class BookingService
         $booking->setStatus('active');
         $booking->setClientKey($clientKey);
 
-        // Build allocations (split issuance: one per traveler)
+        // Build allocations
         $costCenter = $data['costCenter'] ?? $resource->getCostCenter();
         $pricePerTraveler = (float) ($data['pricePerTraveler'] ?? 0);
+        $mergeByCostCenter = !empty($data['mergeByCostCenter']);
 
-        $allocationsJson = [];
         $travelers = [];
-
         if (empty($travelerIds)) {
-            // No travelers specified — allocate to requester only
             $travelerIds = [$requester->getId()];
         }
-
         foreach ($travelerIds as $travelerId) {
             $traveler = $this->userRepository->find($travelerId);
             if ($traveler === null) {
                 throw new \InvalidArgumentException("Traveler #$travelerId not found");
             }
             $travelers[] = $traveler;
-            $allocationsJson[] = [
-                'travelerId' => $traveler->getId(),
-                'travelerName' => $traveler->getFirstName() . ' ' . $traveler->getLastName(),
-                'costCenter' => $costCenter,
-                'amount' => $pricePerTraveler,
-            ];
         }
 
-        $booking->setAllocations($allocationsJson);
+        $allocationsJson = [];
+
+        $booking->setAllocations([]);
         $this->entityManager->persist($booking);
         $this->entityManager->flush();
 
-        // Create BookingAllocation records (split issuance)
-        foreach ($travelers as $traveler) {
-            $allocation = new BookingAllocation();
-            $allocation->setBooking($booking);
-            $allocation->setTraveler($traveler);
-            $allocation->setCostCenter($costCenter);
-            $allocation->setAmount((string) $pricePerTraveler);
-            $this->entityManager->persist($allocation);
+        if ($mergeByCostCenter) {
+            // Merged allocation: one combined record per cost center.
+            // Look for an existing active allocation on the same cost center and
+            // increment its amount; otherwise create a new merged record.
+            $totalAmount = $pricePerTraveler * count($travelers);
+            $primary = $travelers[0];
+
+            $existing = $this->entityManager->getRepository(BookingAllocation::class)
+                ->createQueryBuilder('a')
+                ->innerJoin('a.booking', 'b')
+                ->where('a.costCenter = :cc')
+                ->andWhere('b.status = :active')
+                ->setParameter('cc', $costCenter)
+                ->setParameter('active', 'active')
+                ->setMaxResults(1)
+                ->getQuery()
+                ->getOneOrNullResult();
+
+            if ($existing !== null) {
+                $existing->setAmount((string) ((float) $existing->getAmount() + $totalAmount));
+            } else {
+                $allocation = new BookingAllocation();
+                $allocation->setBooking($booking);
+                $allocation->setTraveler($primary);
+                $allocation->setCostCenter($costCenter);
+                $allocation->setAmount((string) $totalAmount);
+                $this->entityManager->persist($allocation);
+            }
+
+            $allocationsJson[] = [
+                'merged' => true,
+                'travelerCount' => count($travelers),
+                'costCenter' => $costCenter,
+                'amount' => $totalAmount,
+            ];
+        } else {
+            // Split issuance: one allocation per traveler (default).
+            foreach ($travelers as $traveler) {
+                $allocation = new BookingAllocation();
+                $allocation->setBooking($booking);
+                $allocation->setTraveler($traveler);
+                $allocation->setCostCenter($costCenter);
+                $allocation->setAmount((string) $pricePerTraveler);
+                $this->entityManager->persist($allocation);
+
+                $allocationsJson[] = [
+                    'travelerId' => $traveler->getId(),
+                    'travelerName' => $traveler->getFirstName() . ' ' . $traveler->getLastName(),
+                    'costCenter' => $costCenter,
+                    'amount' => $pricePerTraveler,
+                ];
+            }
         }
+
+        $booking->setAllocations($allocationsJson);
 
         // Store idempotency key
         if ($clientKey !== null) {
@@ -182,6 +239,7 @@ class BookingService
 
     /**
      * Cancel a booking. Only the requester can cancel.
+     * Enforces the explicit booking state machine via transitionTo().
      */
     public function cancelBooking(Booking $booking, User $user): void
     {
@@ -189,20 +247,49 @@ class BookingService
             throw new \InvalidArgumentException('You can only cancel your own bookings');
         }
 
-        if ($booking->getStatus() !== 'active') {
-            throw new \InvalidArgumentException('Only active bookings can be cancelled');
+        $this->transitionTo($booking, self::STATE_CANCELLED, $user);
+    }
+
+    /**
+     * Complete a booking. Only the requester or admin roles can complete.
+     */
+    public function completeBooking(Booking $booking, User $user): void
+    {
+        $role = $user->getRole();
+        $isPrivileged = in_array($role, ['ROLE_ADMIN', 'ROLE_HR_ADMIN'], true);
+        if (!$isPrivileged && $booking->getRequester()->getId() !== $user->getId()) {
+            throw new \InvalidArgumentException('Only the requester or an admin can complete this booking');
         }
 
-        $booking->setStatus('cancelled');
+        $this->transitionTo($booking, self::STATE_COMPLETED, $user);
+    }
+
+    /**
+     * Guarded state transition. Rejects any transition not in ALLOWED_TRANSITIONS.
+     */
+    public function transitionTo(Booking $booking, string $newStatus, User $actor): void
+    {
+        $current = $booking->getStatus();
+        if (!array_key_exists($current, self::ALLOWED_TRANSITIONS)) {
+            throw new \InvalidArgumentException("Unknown booking state: {$current}");
+        }
+        $allowed = self::ALLOWED_TRANSITIONS[$current];
+        if (!in_array($newStatus, $allowed, true)) {
+            throw new \InvalidArgumentException(
+                "Invalid booking transition: {$current} -> {$newStatus}"
+            );
+        }
+
+        $booking->setStatus($newStatus);
         $this->entityManager->flush();
 
         $this->auditService->log(
-            $user,
-            'CANCEL',
+            $actor,
+            strtoupper($newStatus),
             'Booking',
             $booking->getId(),
-            ['status' => 'active'],
-            ['status' => 'cancelled'],
+            ['status' => $current],
+            ['status' => $newStatus],
         );
     }
 

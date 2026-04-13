@@ -47,6 +47,14 @@ class ApiSignatureAuthenticator
             );
         }
 
+        // Reject malformed signature/timestamp
+        if (!ctype_xdigit($signature) || strlen($signature) !== 64 || !ctype_digit($timestamp)) {
+            return new JsonResponse(
+                ['error' => 'Malformed API signature'],
+                Response::HTTP_UNAUTHORIZED
+            );
+        }
+
         // Validate timestamp within ±5 minutes
         $requestTime = (int) $timestamp;
         $currentTime = time();
@@ -58,12 +66,35 @@ class ApiSignatureAuthenticator
         }
 
         // Compute expected signature: HMAC-SHA256(method + path + timestamp + body_hash)
-        $bodyHash = hash('sha256', $request->getContent());
+        // Multipart bodies (file uploads) cannot be deterministically pre-hashed
+        // by the browser; treat their body hash as empty by convention.
+        $contentType = (string) $request->headers->get('Content-Type', '');
+        $isMultipart = str_starts_with($contentType, 'multipart/form-data');
+        $bodyHash = hash('sha256', $isMultipart ? '' : $request->getContent());
         $payload = $request->getMethod() . $request->getPathInfo() . $timestamp . $bodyHash;
-        $expectedSignature = hash_hmac('sha256', $payload, $this->signingKey);
 
-        // Timing-safe comparison
-        if (!hash_equals($expectedSignature, $signature)) {
+        // Accept either the server signing key (machine-to-machine / tests) or
+        // the per-session CSRF token (browser admin clients). Both keys are
+        // server-known secrets — the browser key is bound to an authenticated
+        // session and is never exposed cross-origin.
+        $candidateKeys = [$this->signingKey];
+        if ($request->hasSession()) {
+            $sessionCsrf = $request->getSession()->get('csrf_token');
+            if (is_string($sessionCsrf) && $sessionCsrf !== '') {
+                $candidateKeys[] = $sessionCsrf;
+            }
+        }
+
+        $matched = false;
+        foreach ($candidateKeys as $key) {
+            $expected = hash_hmac('sha256', $payload, $key);
+            if (hash_equals($expected, $signature)) {
+                $matched = true;
+                break;
+            }
+        }
+
+        if (!$matched) {
             return new JsonResponse(
                 ['error' => 'Invalid API signature'],
                 Response::HTTP_UNAUTHORIZED

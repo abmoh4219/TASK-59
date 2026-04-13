@@ -59,3 +59,24 @@ export async function approveStep(stepId: number, comment: string): Promise<void
 export async function rejectStep(stepId: number, comment: string): Promise<void> {
   await apiClient.post(`/approvals/${stepId}/reject`, { comment });
 }
+
+export async function reassignStep(
+  stepId: number,
+  newApproverId: number,
+  reason: string,
+): Promise<void> {
+  await apiClient.post(`/approvals/${stepId}/reassign`, { newApproverId, reason });
+}
+
+/**
+ * Requester-initiated reassignment (used by the request owner when the
+ * current approver is out of office). Routes to the request-scoped
+ * endpoint whose backend authorization is owner-centric.
+ */
+export async function reassignRequestApprover(
+  requestId: number,
+  newApproverId: number,
+  reason: string,
+): Promise<void> {
+  await apiClient.post(`/requests/${requestId}/reassign`, { newApproverId, reason });
+}

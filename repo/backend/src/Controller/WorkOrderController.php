@@ -234,9 +234,15 @@ class WorkOrderController extends AbstractController
 
         $workOrder = $photo->getWorkOrder();
 
-        // Access control
+        // Access control — mirrors detail() rules
         if ($user->getRole() === 'ROLE_EMPLOYEE' && $workOrder->getSubmittedBy()->getId() !== $user->getId()) {
             return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
+        }
+        if ($user->getRole() === 'ROLE_TECHNICIAN') {
+            $assigned = $workOrder->getAssignedTechnician();
+            if ($assigned === null || $assigned->getId() !== $user->getId()) {
+                return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
+            }
         }
 
         $path = $photo->getStoredPath();

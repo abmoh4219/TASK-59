@@ -15,9 +15,23 @@ fi
 
 BACKEND_UNIT=0; BACKEND_API=0; FRONTEND_UNIT=0; FRONTEND_API=0
 
+# Portable path detection: prefer the Docker layout (/app/*), fall back to
+# the script's own location so the suite can be run locally as well.
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+if [ -d "/app/backend" ] && [ -d "/app/frontend" ]; then
+  BACKEND_DIR="/app/backend"
+  FRONTEND_DIR="/app/frontend"
+elif [ -d "$SCRIPT_DIR/backend" ] && [ -d "$SCRIPT_DIR/frontend" ]; then
+  BACKEND_DIR="$SCRIPT_DIR/backend"
+  FRONTEND_DIR="$SCRIPT_DIR/frontend"
+else
+  echo "ERROR: could not locate backend/ and frontend/ directories."
+  exit 1
+fi
+
 # Prepare test database: run migrations and load fixtures
 echo "--- Preparing test database ---"
-cd /app/backend
+cd "$BACKEND_DIR"
 php bin/console doctrine:database:create --if-not-exists --env=test 2>&1 || true
 php bin/console doctrine:migrations:migrate --no-interaction --env=test 2>&1 || true
 php bin/console doctrine:fixtures:load --no-interaction --env=test 2>&1 || true
@@ -31,7 +45,7 @@ php vendor/bin/phpunit tests/api_tests/ --testdox 2>&1 || BACKEND_API=1
 [ $BACKEND_API -eq 0 ] && echo "✅ Backend API PASSED" || echo "❌ Backend API FAILED"
 
 echo "--- Frontend Unit Tests (tests/unit_tests/) ---"
-cd /app/frontend
+cd "$FRONTEND_DIR"
 npx vitest run tests/unit_tests/ 2>&1 || FRONTEND_UNIT=1
 [ $FRONTEND_UNIT -eq 0 ] && echo "✅ Frontend Unit PASSED" || echo "❌ Frontend Unit FAILED"
 

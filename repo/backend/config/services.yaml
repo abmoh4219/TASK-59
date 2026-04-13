@@ -25,3 +25,8 @@ services:
     App\Security\ApiSignatureAuthenticator:
         arguments:
             $appSigningKey: '%env(APP_SIGNING_KEY)%'
+
+    # File upload service — signing key from env var, fails closed if missing
+    App\Service\FileUploadService:
+        arguments:
+            $signingKey: '%env(APP_SIGNING_KEY)%'

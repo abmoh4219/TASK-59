@@ -11,7 +11,7 @@ import {
   ChevronDown,
   ChevronUp,
 } from 'lucide-react';
-import { getApprovalQueue, approveStep, rejectStep } from '../../api/attendance';
+import { getApprovalQueue, approveStep, rejectStep, reassignStep } from '../../api/attendance';
 import type { ExceptionRequest, RequestType, ApprovalStep } from '../../types';
 
 // ---- Helpers ----
@@ -73,7 +73,7 @@ function TableSkeleton() {
 
 // ---- Inline action panel ----
 
-type ActionType = 'approve' | 'reject';
+type ActionType = 'approve' | 'reject' | 'reassign';
 
 interface ActionPanelProps {
   step: ApprovalStep;
@@ -84,12 +84,20 @@ interface ActionPanelProps {
 
 function ActionPanel({ step, action, onClose, onDone }: ActionPanelProps) {
   const [comment, setComment] = useState('');
+  const [newApproverId, setNewApproverId] = useState('');
   const [error, setError] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
   const mutation = useMutation({
-    mutationFn: () =>
-      action === 'approve' ? approveStep(step.id, comment) : rejectStep(step.id, comment),
+    mutationFn: () => {
+      if (action === 'approve') return approveStep(step.id, comment);
+      if (action === 'reject') return rejectStep(step.id, comment);
+      const id = parseInt(newApproverId, 10);
+      if (Number.isNaN(id) || id <= 0) {
+        return Promise.reject(new Error('Enter a valid approver ID'));
+      }
+      return reassignStep(step.id, id, comment);
+    },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['approval-queue'] });
       onDone();
@@ -100,18 +108,30 @@ function ActionPanel({ step, action, onClose, onDone }: ActionPanelProps) {
   });
 
   const isApprove = action === 'approve';
+  const isReassign = action === 'reassign';
 
   return (
     <div
       className={`mt-3 p-4 rounded-lg border space-y-3 ${
         isApprove
           ? 'bg-green-500/5 border-green-500/20'
-          : 'bg-red-500/5 border-red-500/20'
+          : isReassign
+            ? 'bg-amber-500/5 border-amber-500/20'
+            : 'bg-red-500/5 border-red-500/20'
       }`}
     >
       <p className="text-sm font-medium text-white">
-        {isApprove ? 'Confirm Approval' : 'Confirm Rejection'}
+        {isApprove ? 'Confirm Approval' : isReassign ? 'Reassign Approver' : 'Confirm Rejection'}
       </p>
+      {isReassign && (
+        <input
+          type="number"
+          value={newApproverId}
+          onChange={(e) => setNewApproverId(e.target.value)}
+          placeholder="New approver user ID"
+          className="w-full bg-surface border border-surface-border rounded-lg px-3 py-2 text-white text-sm focus:outline-none focus:ring-2 focus:ring-amber-500 placeholder-gray-500"
+        />
+      )}
       <textarea
         value={comment}
         onChange={(e) => setComment(e.target.value)}
@@ -139,7 +159,9 @@ function ActionPanel({ step, action, onClose, onDone }: ActionPanelProps) {
           className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors disabled:opacity-60 ${
             isApprove
               ? 'bg-green-600 hover:bg-green-700 text-white'
-              : 'bg-red-600 hover:bg-red-700 text-white'
+              : isReassign
+                ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                : 'bg-red-600 hover:bg-red-700 text-white'
           }`}
         >
           {mutation.isPending && <Loader2 size={12} className="animate-spin" />}
@@ -147,6 +169,8 @@ function ActionPanel({ step, action, onClose, onDone }: ActionPanelProps) {
             <>
               <CheckCircle2 size={12} /> Approve
             </>
+          ) : isReassign ? (
+            <>Reassign</>
           ) : (
             <>
               <XCircle size={12} /> Reject
@@ -249,6 +273,15 @@ function QueueRow({ request }: QueueRowProps) {
           >
             <XCircle size={13} />
             Reject
+          </button>
+          <button
+            onClick={() => {
+              setExpanded(true);
+              setActiveAction(activeAction === 'reassign' ? null : 'reassign');
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-amber-600/10 hover:bg-amber-600/20 border border-amber-600/30 text-amber-400 text-xs font-medium rounded-lg transition-colors"
+          >
+            Reassign
           </button>
           <button
             onClick={() => setExpanded((v) => !v)}

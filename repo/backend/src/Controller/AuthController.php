@@ -5,8 +5,10 @@ namespace App\Controller;
 use App\Entity\User;
 use App\Service\AuditService;
 use App\Service\EncryptionService;
+use App\Service\IdentityAccessPolicy;
 use App\Service\MaskingService;
 use App\Service\RateLimitService;
+use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -21,6 +23,8 @@ class AuthController extends AbstractController
         private readonly MaskingService $maskingService,
         private readonly RateLimitService $rateLimitService,
         private readonly EncryptionService $encryptionService,
+        private readonly IdentityAccessPolicy $identityPolicy,
+        private readonly EntityManagerInterface $entityManager,
     ) {
     }
 
@@ -82,23 +86,12 @@ class AuthController extends AbstractController
             $request->getSession()->set('csrf_token', $csrfToken);
         }
 
-        // Tiered phone access: HR_ADMIN and ADMIN get decrypted full value; others get masked.
-        $phone = null;
-        $phoneEnc = $user->getPhoneEncrypted();
-        if ($phoneEnc !== null) {
-            // Attempt to decrypt; if value is plaintext (not yet encrypted), use as-is
-            try {
-                $phone = $this->encryptionService->decrypt($phoneEnc);
-            } catch (\Throwable) {
-                $phone = $phoneEnc;
-            }
-
-            $isHrAdmin = in_array('ROLE_HR_ADMIN', $user->getRoles(), true)
-                || in_array('ROLE_ADMIN', $user->getRoles(), true);
-            if (!$isHrAdmin) {
-                $phone = $this->maskingService->maskPhone($phone);
-            }
-        }
+        // Identity-data tiering is delegated to IdentityAccessPolicy so that
+        // every identity-bearing endpoint applies the same rule. Viewing one's
+        // own profile always returns unmasked phone; HR Admin sees unmasked
+        // for any subject; all other roles (including System Administrator)
+        // receive a masked phone.
+        $phone = $this->identityPolicy->resolvePhone($user, $user);
 
         return $this->json([
             'user' => [
@@ -113,6 +106,93 @@ class AuthController extends AbstractController
                 'isOut' => $user->isOut(),
             ],
             'csrfToken' => $csrfToken,
+        ]);
+    }
+
+    /**
+     * POST /api/auth/me/deletion-request — user-initiated data deletion.
+     *
+     * Preserves the retention-safe anonymization semantics: this endpoint
+     * does NOT delete any data. It records a deletion request on the user's
+     * own account (timestamp + optional reason) and writes an audit log
+     * entry. An administrator subsequently runs the retention-preserving
+     * anonymization via POST /api/admin/users/{id}/delete-data.
+     *
+     * Authorization: session-authenticated users can only create a deletion
+     * request for themselves — there is no path to request deletion of
+     * another user's data via this endpoint.
+     */
+    #[Route('/me/deletion-request', name: 'api_auth_me_deletion_request', methods: ['POST'])]
+    public function createDeletionRequest(Request $request): JsonResponse
+    {
+        /** @var User|null $user */
+        $user = $this->getUser();
+        if ($user === null) {
+            return $this->json(['error' => 'Not authenticated'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        if (!$this->rateLimitService->checkStandardLimit($user->getId())) {
+            return $this->json(['error' => 'Rate limit exceeded'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
+        if ($user->getDeletionRequestedAt() !== null) {
+            return $this->json([
+                'error' => 'A deletion request is already pending for this account',
+                'deletionRequestedAt' => $user->getDeletionRequestedAt()->format(\DateTimeInterface::ATOM),
+            ], Response::HTTP_CONFLICT);
+        }
+        if ($user->getDeletedAt() !== null) {
+            return $this->json(
+                ['error' => 'Account data has already been anonymized'],
+                Response::HTTP_CONFLICT,
+            );
+        }
+
+        $data = json_decode($request->getContent(), true) ?? [];
+        $reason = is_string($data['reason'] ?? null) ? trim($data['reason']) : '';
+        if (strlen($reason) > 2000) {
+            return $this->json(['error' => 'reason must be under 2000 characters'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $now = new \DateTimeImmutable();
+        $user->setDeletionRequestedAt($now);
+        $user->setDeletionRequestReason($reason !== '' ? $reason : null);
+        $this->entityManager->flush();
+
+        $this->auditService->log(
+            $user,
+            'DELETION_REQUEST',
+            'User',
+            $user->getId(),
+            null,
+            ['requestedAt' => $now->format(\DateTimeInterface::ATOM), 'reason' => $reason],
+            $request,
+        );
+
+        return $this->json([
+            'message' => 'Deletion request recorded. An administrator will process retention-safe anonymization.',
+            'deletionRequestedAt' => $now->format(\DateTimeInterface::ATOM),
+        ], Response::HTTP_ACCEPTED);
+    }
+
+    /**
+     * GET /api/auth/me/deletion-request — check the status of the current
+     * user's pending deletion request.
+     */
+    #[Route('/me/deletion-request', name: 'api_auth_me_deletion_request_status', methods: ['GET'])]
+    public function getDeletionRequestStatus(): JsonResponse
+    {
+        /** @var User|null $user */
+        $user = $this->getUser();
+        if ($user === null) {
+            return $this->json(['error' => 'Not authenticated'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        return $this->json([
+            'pending' => $user->getDeletionRequestedAt() !== null && $user->getDeletedAt() === null,
+            'requestedAt' => $user->getDeletionRequestedAt()?->format(\DateTimeInterface::ATOM),
+            'anonymizedAt' => $user->getDeletedAt()?->format(\DateTimeInterface::ATOM),
+            'reason' => $user->getDeletionRequestReason(),
         ]);
     }
 

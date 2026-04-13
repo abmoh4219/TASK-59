@@ -144,8 +144,19 @@ class BookingController extends AbstractController
             return $this->json(['error' => 'Booking not found'], Response::HTTP_NOT_FOUND);
         }
 
-        // Employee can only see their own bookings
-        if ($user->getRole() === 'ROLE_EMPLOYEE' && $booking->getRequester()->getId() !== $user->getId()) {
+        // Object-level access: only the requester, listed travelers, or
+        // privileged admin/HR roles can view a booking detail.
+        $role = $user->getRole();
+        $isRequester = $booking->getRequester()->getId() === $user->getId();
+        $isPrivileged = in_array($role, ['ROLE_HR_ADMIN', 'ROLE_ADMIN'], true);
+        $isTraveler = false;
+        foreach ((array) $booking->getAllocations() as $alloc) {
+            if (is_array($alloc) && (int) ($alloc['travelerId'] ?? 0) === $user->getId()) {
+                $isTraveler = true;
+                break;
+            }
+        }
+        if (!$isRequester && !$isPrivileged && !$isTraveler) {
             return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
         }
 

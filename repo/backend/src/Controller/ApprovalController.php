@@ -132,6 +132,10 @@ class ApprovalController extends AbstractController
         /** @var User $user */
         $user = $this->getUser();
 
+        if (!$this->rateLimitService->checkStandardLimit($user->getId())) {
+            return $this->json(['error' => 'Rate limit exceeded'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
         $step = $this->stepRepository->find($stepId);
         if ($step === null) {
             return $this->json(['error' => 'Approval step not found'], Response::HTTP_NOT_FOUND);

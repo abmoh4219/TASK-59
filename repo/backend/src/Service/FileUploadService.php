@@ -30,6 +30,9 @@ class FileUploadService
         private readonly EntityManagerInterface $entityManager,
         private readonly RateLimitService $rateLimitService,
         private readonly AuditService $auditService,
+        // Wired via services.yaml ($signingKey -> %env(APP_SIGNING_KEY)%)
+        // — nullable so unit tests can explicitly pass null.
+        private readonly ?string $signingKey = null,
     ) {
     }
 
@@ -160,11 +163,31 @@ class FileUploadService
 
     /**
      * Generate a signed URL for serving a file (time-limited).
+     * Fails closed: throws if APP_SIGNING_KEY is missing, empty, or clearly
+     * a placeholder. No predictable fallback is used.
+     *
+     * @throws \RuntimeException when signing configuration is invalid
      */
     public function getSignedUrl(int $fileId, int $expirySeconds = 3600): string
     {
+        $key = $this->signingKey;
+        if ($key === null || $key === '' || strlen($key) < 16) {
+            throw new \RuntimeException(
+                'APP_SIGNING_KEY is not configured; refusing to sign file URLs with a fallback key',
+            );
+        }
+        // Reject obvious placeholder values that would give attackers a free pass.
+        $placeholderPatterns = ['default-key', 'change-me', 'changeme', 'placeholder'];
+        foreach ($placeholderPatterns as $bad) {
+            if (stripos($key, $bad) !== false) {
+                throw new \RuntimeException(
+                    'APP_SIGNING_KEY appears to be a placeholder; rotate it before signing file URLs',
+                );
+            }
+        }
+
         $expiry = time() + $expirySeconds;
-        $signature = hash_hmac('sha256', "file:$fileId:$expiry", $_ENV['APP_SIGNING_KEY'] ?? 'default-key');
+        $signature = hash_hmac('sha256', "file:$fileId:$expiry", $key);
 
         return "/api/files/$fileId?expires=$expiry&signature=$signature";
     }

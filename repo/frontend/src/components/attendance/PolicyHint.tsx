@@ -2,35 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import apiClient from '../../api/client';
 import type { ExceptionType } from '../../types';
 import { Info } from 'lucide-react';
-
-interface ExceptionRuleData {
-  ruleType: string;
-  toleranceMinutes: number;
-  missedPunchWindowMinutes: number;
-  filingWindowDays: number;
-}
-
-function getHintText(exceptionType: ExceptionType, rules: ExceptionRuleData[]): string {
-  const rule = rules.find((r) => r.ruleType === exceptionType) || rules[0];
-  const tolerance = rule?.toleranceMinutes ?? 5;
-  const missedWindow = rule?.missedPunchWindowMinutes ?? 30;
-  const filingDays = rule?.filingWindowDays ?? 7;
-
-  switch (exceptionType) {
-    case 'LATE_ARRIVAL':
-      return `Late arrival: after shift start + ${tolerance} minutes tolerance (e.g., late after 9:0${tolerance} AM for a 9:00 AM shift)`;
-    case 'EARLY_LEAVE':
-      return `Early leave: departed more than ${tolerance} minutes before shift end`;
-    case 'MISSED_PUNCH':
-      return `Missed punch: no clock-in event within ${missedWindow} minutes of shift start`;
-    case 'ABSENCE':
-      return 'Absence: no punch events recorded for the scheduled shift';
-    case 'APPROVED_OFFSITE':
-      return 'Approved offsite: business trip or outing request approved for this date';
-    default:
-      return `Requests must be filed within ${filingDays} calendar days of the exception`;
-  }
-}
+import { getHintText, type ExceptionRuleData } from './policyHintText';
 
 export function FilingWindowHint({ rules }: { rules: ExceptionRuleData[] }) {
   const filingDays = rules[0]?.filingWindowDays ?? 7;
@@ -71,6 +43,6 @@ export default function PolicyHint({ exceptions }: { exceptions: ExceptionType[]
   );
 }
 
-// Export for testing
+// Re-export the pure helpers so existing test imports continue to resolve.
 export { getHintText };
 export type { ExceptionRuleData };

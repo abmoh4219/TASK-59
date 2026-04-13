@@ -10,6 +10,7 @@ use App\Repository\FailedLoginAttemptRepository;
 use App\Repository\UserRepository;
 use App\Service\AuditService;
 use App\Service\EncryptionService;
+use App\Service\IdentityAccessPolicy;
 use App\Service\MaskingService;
 use App\Service\RateLimitService;
 use Doctrine\ORM\EntityManagerInterface;
@@ -37,6 +38,7 @@ class AdminController extends AbstractController
         private readonly EncryptionService $encryptionService,
         private readonly MaskingService $maskingService,
         private readonly UserPasswordHasherInterface $passwordHasher,
+        private readonly IdentityAccessPolicy $identityPolicy,
     ) {
     }
 
@@ -65,7 +67,10 @@ class AdminController extends AbstractController
 
         $users = $this->userRepository->findAll();
 
-        return $this->json(array_map([$this, 'serializeUserFull'], $users));
+        return $this->json(array_map(
+            fn(User $u) => $this->serializeUser($u, $admin),
+            $users,
+        ));
     }
 
     /**
@@ -119,7 +124,10 @@ class AdminController extends AbstractController
             $request,
         );
 
-        return $this->json($this->serializeUserFull($user), Response::HTTP_CREATED);
+        return $this->json(
+            $this->serializeUser($user, $admin),
+            Response::HTTP_CREATED,
+        );
     }
 
     /**
@@ -174,7 +182,34 @@ class AdminController extends AbstractController
             $request,
         );
 
-        return $this->json($this->serializeUserFull($user));
+        return $this->json(
+            $this->serializeUser($user, $admin),
+        );
+    }
+
+    /**
+     * GET /api/admin/deletion-requests — list users with pending
+     * self-initiated deletion requests awaiting admin anonymization.
+     */
+    #[Route('/deletion-requests', name: 'api_admin_deletion_requests', methods: ['GET'])]
+    public function listDeletionRequests(): JsonResponse
+    {
+        /** @var User $admin */
+        $admin = $this->getUser();
+
+        $qb = $this->userRepository->createQueryBuilder('u')
+            ->where('u.deletionRequestedAt IS NOT NULL')
+            ->andWhere('u.deletedAt IS NULL')
+            ->orderBy('u.deletionRequestedAt', 'ASC');
+
+        $users = $qb->getQuery()->getResult();
+
+        return $this->json(array_map(function (User $u) use ($admin) {
+            $serialized = $this->serializeUser($u, $admin);
+            $serialized['deletionRequestedAt'] = $u->getDeletionRequestedAt()?->format(\DateTimeInterface::ATOM);
+            $serialized['deletionRequestReason'] = $u->getDeletionRequestReason();
+            return $serialized;
+        }, $users));
     }
 
     /**
@@ -209,6 +244,10 @@ class AdminController extends AbstractController
         $user->setPhoneEncrypted(null);
         $user->setIsActive(false);
         $user->setDeletedAt(new \DateTimeImmutable());
+        // Close out any user-initiated deletion request: the requestedAt
+        // timestamp is preserved as a historical marker, but the reason is
+        // cleared since it is PII-adjacent text.
+        $user->setDeletionRequestReason(null);
 
         $this->entityManager->flush();
 
@@ -309,6 +348,120 @@ class AdminController extends AbstractController
     }
 
     /**
+     * POST /api/admin/attendance/import — upload a CSV file of punch events.
+     * Mirrors the app:import-attendance console command logic.
+     */
+    #[Route('/attendance/import', name: 'api_admin_attendance_import', methods: ['POST'])]
+    public function importAttendanceCsv(Request $request): JsonResponse
+    {
+        /** @var User $admin */
+        $admin = $this->getUser();
+
+        if (!$this->rateLimitService->checkUploadLimit($admin->getId())) {
+            return $this->json(['error' => 'Upload rate limit exceeded'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
+        /** @var \Symfony\Component\HttpFoundation\File\UploadedFile|null $file */
+        $file = $request->files->get('file');
+        if ($file === null) {
+            return $this->json(['error' => 'CSV file is required (field name: file)'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $ext = strtolower($file->getClientOriginalExtension());
+        if ($ext !== 'csv') {
+            return $this->json(['error' => 'Only .csv files are accepted'], Response::HTTP_BAD_REQUEST);
+        }
+
+        if ($file->getSize() > 10 * 1024 * 1024) {
+            return $this->json(['error' => 'File exceeds 10 MB limit'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $csv = \League\Csv\Reader::createFromPath($file->getPathname(), 'r');
+        $csv->setHeaderOffset(0);
+
+        $imported = 0;
+        $skipped = 0;
+        $errors = [];
+        $userRepo = $this->entityManager->getRepository(User::class);
+        $punchRepo = $this->entityManager->getRepository(\App\Entity\PunchEvent::class);
+
+        foreach ($csv->getRecords() as $offset => $record) {
+            $rowNum = $offset + 2;
+            $employeeId = $record['employee_id'] ?? null;
+            $dateStr = $record['date'] ?? null;
+            $eventType = strtoupper(trim($record['event_type'] ?? ''));
+            $timeStr = $record['time'] ?? null;
+
+            if (!$employeeId || !$dateStr || !$eventType || !$timeStr) {
+                $errors[] = "Row $rowNum: missing required fields";
+                continue;
+            }
+            if (!in_array($eventType, ['IN', 'OUT'], true)) {
+                $errors[] = "Row $rowNum: invalid event_type '$eventType'";
+                continue;
+            }
+
+            $date = \DateTimeImmutable::createFromFormat('m/d/Y', $dateStr);
+            if ($date === false) {
+                $errors[] = "Row $rowNum: invalid date '$dateStr'";
+                continue;
+            }
+            $date = $date->setTime(0, 0, 0);
+
+            $time = \DateTimeImmutable::createFromFormat('H:i:s', $timeStr)
+                ?: \DateTimeImmutable::createFromFormat('H:i', $timeStr);
+            if ($time === false) {
+                $errors[] = "Row $rowNum: invalid time '$timeStr'";
+                continue;
+            }
+
+            $user = $userRepo->find((int) $employeeId);
+            if ($user === null) {
+                $errors[] = "Row $rowNum: user ID $employeeId not found";
+                continue;
+            }
+
+            $existing = $punchRepo->findOneBy([
+                'user' => $user,
+                'eventDate' => $date,
+                'eventTime' => $time,
+                'eventType' => $eventType,
+            ]);
+            if ($existing !== null) {
+                $skipped++;
+                continue;
+            }
+
+            $punch = new \App\Entity\PunchEvent();
+            $punch->setUser($user);
+            $punch->setEventDate($date);
+            $punch->setEventTime($time);
+            $punch->setEventType($eventType);
+            $punch->setSource('CSV');
+            $this->entityManager->persist($punch);
+            $imported++;
+        }
+
+        $this->entityManager->flush();
+
+        $this->auditService->log(
+            $admin,
+            'CSV_IMPORT',
+            'PunchEvent',
+            null,
+            null,
+            ['file' => $file->getClientOriginalName(), 'imported' => $imported, 'skipped' => $skipped, 'errors' => count($errors)],
+            $request,
+        );
+
+        return $this->json([
+            'imported' => $imported,
+            'skipped' => $skipped,
+            'errors' => $errors,
+        ]);
+    }
+
+    /**
      * GET /api/admin/anomaly-alerts — recent failed login attempts.
      */
     #[Route('/anomaly-alerts', name: 'api_admin_anomaly_alerts', methods: ['GET'])]
@@ -334,21 +487,14 @@ class AdminController extends AbstractController
     }
 
     /**
-     * Serialize user with FULL identity (admin view).
-     * Phone is decrypted and returned in full.
+     * Serialize a user. Identity-data access policy is delegated to
+     * IdentityAccessPolicy::resolvePhone() — full phone is returned only
+     * when the viewer is HR Admin or when the viewer is the subject.
+     * System Administrator always receives the masked representation.
      */
-    private function serializeUserFull(User $user): array
+    private function serializeUser(User $user, User $viewer): array
     {
-        $phone = null;
-        $phoneEnc = $user->getPhoneEncrypted();
-        if ($phoneEnc !== null) {
-            try {
-                $phone = $this->encryptionService->decrypt($phoneEnc);
-            } catch (\Throwable) {
-                // Legacy/unencrypted value — return as-is (admin gets full access)
-                $phone = $phoneEnc;
-            }
-        }
+        $phone = $this->identityPolicy->resolvePhone($viewer, $user);
 
         return [
             'id' => $user->getId(),
@@ -357,7 +503,7 @@ class AdminController extends AbstractController
             'firstName' => $user->getFirstName(),
             'lastName' => $user->getLastName(),
             'role' => $user->getRole(),
-            'phone' => $phone, // Full phone for admin
+            'phone' => $phone,
             'isActive' => $user->isActive(),
             'isOut' => $user->isOut(),
             'deletedAt' => $user->getDeletedAt()?->format(\DateTimeInterface::ATOM),

@@ -17,6 +17,7 @@ security:
         main:
             lazy: true
             provider: app_user_provider
+            user_checker: App\Security\UserChecker
             stateless: false
             json_login:
                 check_path: /api/auth/login
@@ -31,6 +32,13 @@ security:
         - { path: ^/api/health, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/login, roles: PUBLIC_ACCESS }
         - { path: ^/api/auth/csrf-token, roles: PUBLIC_ACCESS }
+        # System-Administrator-only admin surfaces (audit, imports, anomaly alerts)
+        - { path: ^/api/admin/audit, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/attendance/import, roles: ROLE_ADMIN }
+        - { path: ^/api/admin/anomaly-alerts, roles: ROLE_ADMIN }
+        # HR-Admin-accessible policy/user management (ROLE_ADMIN inherits ROLE_HR_ADMIN)
+        - { path: ^/api/admin/users, roles: ROLE_HR_ADMIN }
+        - { path: ^/api/admin/config, roles: ROLE_HR_ADMIN }
         - { path: ^/api/admin, roles: ROLE_ADMIN }
         - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
 

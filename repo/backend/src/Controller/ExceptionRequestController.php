@@ -68,6 +68,19 @@ class ExceptionRequestController extends AbstractController
             return $this->json($this->serializeRequest($excRequest), Response::HTTP_CREATED);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
+        } catch (\DateMalformedStringException | \Exception $e) {
+            // Any date/time parse failure or other unexpected client-data
+            // failure normalizes to a deterministic 400. We intentionally do
+            // NOT leak the underlying exception message verbatim.
+            if ($e instanceof \DateMalformedStringException
+                || str_contains($e->getMessage(), 'Failed to parse time string')
+                || str_contains($e->getMessage(), 'DateTimeImmutable')) {
+                return $this->json(
+                    ['error' => 'Invalid date or time format in request'],
+                    Response::HTTP_BAD_REQUEST,
+                );
+            }
+            throw $e;
         }
     }
 
@@ -106,8 +119,23 @@ class ExceptionRequestController extends AbstractController
             return $this->json(['error' => 'Request not found'], Response::HTTP_NOT_FOUND);
         }
 
-        // Employees can only see their own requests
-        if ($user->getRole() === 'ROLE_EMPLOYEE' && $excRequest->getUser()->getId() !== $user->getId()) {
+        // Object-level access policy:
+        // - the requester themselves
+        // - any approver currently or historically assigned to this request
+        // - HR Admin / System Administrator (always)
+        $role = $user->getRole();
+        $isOwner = $excRequest->getUser()->getId() === $user->getId();
+        $isPrivileged = in_array($role, ['ROLE_HR_ADMIN', 'ROLE_ADMIN'], true);
+        $isApprover = false;
+        if (!$isOwner && !$isPrivileged) {
+            foreach ($this->stepRepository->findBy(['exceptionRequest' => $excRequest]) as $s) {
+                if ($s->getApprover()->getId() === $user->getId()) {
+                    $isApprover = true;
+                    break;
+                }
+            }
+        }
+        if (!$isOwner && !$isPrivileged && !$isApprover) {
             return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
         }
 
@@ -123,6 +151,10 @@ class ExceptionRequestController extends AbstractController
         /** @var User $user */
         $user = $this->getUser();
 
+        if (!$this->rateLimitService->checkStandardLimit($user->getId())) {
+            return $this->json(['error' => 'Rate limit exceeded'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
         $excRequest = $this->requestRepository->find($id);
         if ($excRequest === null) {
             return $this->json(['error' => 'Request not found'], Response::HTTP_NOT_FOUND);
@@ -137,7 +169,11 @@ class ExceptionRequestController extends AbstractController
     }
 
     /**
-     * POST /api/requests/{id}/reassign — request reassignment.
+     * POST /api/requests/{id}/reassign — requester-initiated reassignment.
+     *
+     * Scoped to the request owner when the currently assigned approver is
+     * marked out-of-office. For approver/admin-driven reassignment, see
+     * POST /api/approvals/{stepId}/reassign.
      */
     #[Route('/{id}/reassign', name: 'api_requests_reassign', methods: ['POST'], requirements: ['id' => '\d+'])]
     public function reassign(int $id, Request $request): JsonResponse
@@ -145,9 +181,18 @@ class ExceptionRequestController extends AbstractController
         /** @var User $user */
         $user = $this->getUser();
 
+        if (!$this->rateLimitService->checkStandardLimit($user->getId())) {
+            return $this->json(['error' => 'Rate limit exceeded'], Response::HTTP_TOO_MANY_REQUESTS);
+        }
+
         $excRequest = $this->requestRepository->find($id);
         if ($excRequest === null) {
             return $this->json(['error' => 'Request not found'], Response::HTTP_NOT_FOUND);
+        }
+
+        // Only the requester themselves may use this endpoint.
+        if ($excRequest->getUser()->getId() !== $user->getId()) {
+            return $this->json(['error' => 'Access denied'], Response::HTTP_FORBIDDEN);
         }
 
         $data = json_decode($request->getContent(), true);
@@ -158,7 +203,6 @@ class ExceptionRequestController extends AbstractController
             return $this->json(['error' => 'newApproverId is required'], Response::HTTP_BAD_REQUEST);
         }
 
-        // Find current pending step
         $currentStep = $this->stepRepository->findOneBy([
             'exceptionRequest' => $excRequest,
             'stepNumber' => $excRequest->getStepNumber(),
@@ -175,7 +219,7 @@ class ExceptionRequestController extends AbstractController
         }
 
         try {
-            $this->workflowService->reassign($currentStep, $newApprover, $user, $reason);
+            $this->workflowService->requesterReassign($excRequest, $currentStep, $newApprover, $user, $reason);
             return $this->json(['message' => 'Reassigned successfully']);
         } catch (\InvalidArgumentException $e) {
             return $this->json(['error' => $e->getMessage()], Response::HTTP_BAD_REQUEST);
@@ -195,6 +239,7 @@ class ExceptionRequestController extends AbstractController
                 'stepNumber' => $step->getStepNumber(),
                 'approverName' => $step->getApprover()->getFirstName() . ' ' . $step->getApprover()->getLastName(),
                 'approverRole' => $step->getApprover()->getRole(),
+                'approverIsOut' => $step->getApprover()->isOut(),
                 'status' => $step->getStatus(),
                 'slaDeadline' => $step->getSlaDeadline()?->format(\DateTimeInterface::ATOM),
                 'remainingMinutes' => $this->slaService->getRemainingMinutes($step),

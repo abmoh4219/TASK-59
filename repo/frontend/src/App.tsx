@@ -1,5 +1,6 @@
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
+import type { UserRole } from './types';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Layout from './components/layout/Layout';
@@ -28,6 +29,27 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return isAuthenticated ? <>{children}</> : <Navigate to="/login" replace />;
 }
 
+/**
+ * Role-gated route guard. Defense-in-depth against users navigating to
+ * privileged UI routes they are not allowed to use. Backend denial still
+ * enforces the real access control; this just prevents dead-end pages
+ * and mirrors the sidebar's role matrix.
+ */
+function RoleRoute({
+  allow,
+  children,
+}: {
+  allow: UserRole[];
+  children: React.ReactNode;
+}) {
+  const { user, isLoading } = useAuth();
+  if (isLoading) return null;
+  if (!user || !allow.includes(user.role)) {
+    return <Navigate to="/" replace />;
+  }
+  return <>{children}</>;
+}
+
 function App() {
   return (
     <Routes>
@@ -42,15 +64,50 @@ function App() {
                 <Route path="/attendance" element={<AttendancePage />} />
                 <Route path="/attendance/request" element={<ExceptionRequestForm />} />
                 <Route path="/attendance/request/:id" element={<RequestDetailPage />} />
-                <Route path="/approvals" element={<ApprovalQueuePage />} />
+                <Route
+                  path="/approvals"
+                  element={
+                    <RoleRoute allow={['ROLE_ADMIN', 'ROLE_HR_ADMIN', 'ROLE_SUPERVISOR']}>
+                      <ApprovalQueuePage />
+                    </RoleRoute>
+                  }
+                />
                 <Route path="/work-orders" element={<WorkOrderListPage />} />
                 <Route path="/work-orders/new" element={<WorkOrderForm />} />
                 <Route path="/work-orders/:id" element={<WorkOrderDetailPage />} />
                 <Route path="/bookings" element={<BookingPage />} />
-                <Route path="/admin/users" element={<UserManagementPage />} />
-                <Route path="/admin/audit" element={<AuditLogPage />} />
-                <Route path="/admin/csv-import" element={<CsvImportPage />} />
-                <Route path="/admin/config" element={<SystemConfigPage />} />
+                <Route
+                  path="/admin/users"
+                  element={
+                    <RoleRoute allow={['ROLE_ADMIN', 'ROLE_HR_ADMIN']}>
+                      <UserManagementPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="/admin/audit"
+                  element={
+                    <RoleRoute allow={['ROLE_ADMIN']}>
+                      <AuditLogPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="/admin/csv-import"
+                  element={
+                    <RoleRoute allow={['ROLE_ADMIN']}>
+                      <CsvImportPage />
+                    </RoleRoute>
+                  }
+                />
+                <Route
+                  path="/admin/config"
+                  element={
+                    <RoleRoute allow={['ROLE_ADMIN', 'ROLE_HR_ADMIN']}>
+                      <SystemConfigPage />
+                    </RoleRoute>
+                  }
+                />
                 <Route path="*" element={<Navigate to="/" replace />} />
               </Routes>
             </Layout>

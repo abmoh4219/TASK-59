@@ -98,6 +98,7 @@ export interface ApprovalStep {
   stepNumber: number;
   approverName: string;
   approverRole: string;
+  approverIsOut?: boolean;
   status: string;
   slaDeadline: string;
   remainingMinutes: number;

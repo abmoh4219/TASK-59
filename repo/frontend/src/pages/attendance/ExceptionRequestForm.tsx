@@ -58,9 +58,12 @@ export default function ExceptionRequestForm() {
   const navigate = useNavigate();
   const formId = useId();
 
+  // MM/DD/YYYY is the primary input contract (Prompt requirement).
+  // We use explicit text inputs so the format is deterministic across
+  // browsers and locales, then convert to ISO (YYYY-MM-DD) at submit time.
   const [requestType, setRequestType] = useState<RequestType>('CORRECTION');
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+  const [startDate, setStartDate] = useState(''); // MM/DD/YYYY
+  const [endDate, setEndDate] = useState(''); // MM/DD/YYYY
   const [startTime, setStartTime] = useState('09:00');
   const [endTime, setEndTime] = useState('17:00');
   const [reason, setReason] = useState('');
@@ -73,27 +76,49 @@ export default function ExceptionRequestForm() {
     },
   });
 
-  function validate(): string | null {
-    if (!startDate) return 'Start date is required.';
-    if (!endDate) return 'End date is required.';
-    if (endDate < startDate) return 'End date must be on or after start date.';
-    if (reason.trim().length < 10) return 'Reason must be at least 10 characters.';
-    return null;
+  const mmddyyyyPattern = /^(0[1-9]|1[0-2])\/(0[1-9]|[12]\d|3[01])\/\d{4}$/;
+
+  function mmddyyyyToIso(value: string): string | null {
+    if (!mmddyyyyPattern.test(value)) return null;
+    const [mm, dd, yyyy] = value.split('/');
+    const d = new Date(`${yyyy}-${mm}-${dd}T00:00:00`);
+    if (Number.isNaN(d.getTime())) return null;
+    // Guard against silent rollover (e.g., 02/30/2026 -> 03/02)
+    if (
+      d.getFullYear() !== Number(yyyy) ||
+      d.getMonth() + 1 !== Number(mm) ||
+      d.getDate() !== Number(dd)
+    ) {
+      return null;
+    }
+    return `${yyyy}-${mm}-${dd}`;
+  }
+
+  function validate(): { error: string | null; startIso?: string; endIso?: string } {
+    if (!startDate) return { error: 'Start date is required.' };
+    if (!endDate) return { error: 'End date is required.' };
+    const startIso = mmddyyyyToIso(startDate);
+    if (startIso === null) return { error: 'Start date must be MM/DD/YYYY.' };
+    const endIso = mmddyyyyToIso(endDate);
+    if (endIso === null) return { error: 'End date must be MM/DD/YYYY.' };
+    if (endIso < startIso) return { error: 'End date must be on or after start date.' };
+    if (reason.trim().length < 10) return { error: 'Reason must be at least 10 characters.' };
+    return { error: null, startIso, endIso };
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    const err = validate();
-    if (err) {
-      setValidationError(err);
+    const result = validate();
+    if (result.error || !result.startIso || !result.endIso) {
+      setValidationError(result.error);
       return;
     }
     setValidationError(null);
     const clientKey = crypto.randomUUID();
     mutation.mutate({
       requestType,
-      startDate,
-      endDate,
+      startDate: result.startIso,
+      endDate: result.endIso,
       startTime,
       endTime,
       reason: reason.trim(),
@@ -168,44 +193,36 @@ export default function ExceptionRequestForm() {
         <div className="bg-surface-card border border-surface-border rounded-xl p-5">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <FieldLabel htmlFor={`${formId}-start-date`}>Start Date</FieldLabel>
+              <FieldLabel htmlFor={`${formId}-start-date`}>Start Date (MM/DD/YYYY)</FieldLabel>
               <input
                 id={`${formId}-start-date`}
-                type="date"
+                type="text"
+                inputMode="numeric"
+                placeholder="MM/DD/YYYY"
+                maxLength={10}
+                pattern="(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/\d{4}"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
                 className={inputClass}
+                aria-label="Start date in MM/DD/YYYY format"
                 required
               />
-              {startDate && (
-                <p className="mt-1 text-xs text-gray-500">
-                  {new Date(startDate + 'T00:00:00').toLocaleDateString('en-US', {
-                    month: '2-digit',
-                    day: '2-digit',
-                    year: 'numeric',
-                  })}
-                </p>
-              )}
             </div>
             <div>
-              <FieldLabel htmlFor={`${formId}-end-date`}>End Date</FieldLabel>
+              <FieldLabel htmlFor={`${formId}-end-date`}>End Date (MM/DD/YYYY)</FieldLabel>
               <input
                 id={`${formId}-end-date`}
-                type="date"
+                type="text"
+                inputMode="numeric"
+                placeholder="MM/DD/YYYY"
+                maxLength={10}
+                pattern="(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/\d{4}"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
                 className={inputClass}
+                aria-label="End date in MM/DD/YYYY format"
                 required
               />
-              {endDate && (
-                <p className="mt-1 text-xs text-gray-500">
-                  {new Date(endDate + 'T00:00:00').toLocaleDateString('en-US', {
-                    month: '2-digit',
-                    day: '2-digit',
-                    year: 'numeric',
-                  })}
-                </p>
-              )}
             </div>
           </div>
         </div>
