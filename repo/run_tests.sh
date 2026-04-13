@@ -29,9 +29,39 @@ else
   exit 1
 fi
 
+# ----------------------------------------------------------------------
+# Self-provisioning: the company validator runs this script inside the
+# production backend container (which was built with `composer install
+# --no-dev`). PHPUnit and Symfony dev runtime aren't present in that
+# image, and the frontend has no node_modules. Install them just-in-time
+# here so the same script works in:
+#   - docker compose --profile test run test   (pre-provisioned)
+#   - docker compose exec backend sh run_tests.sh   (production image)
+#   - local developer machines with PHP 8.2 + Node 20
+# The production image is NOT modified — this is runtime provisioning
+# inside the container where the tests execute.
+# ----------------------------------------------------------------------
+
+cd "$BACKEND_DIR"
+
+# Ensure a .env exists on disk for the Symfony Dotenv loader (composer
+# post-install / cache:clear need it). Prefer the committed backend stub;
+# never fail the whole suite if it is already present.
+if [ ! -f .env ] && [ -f .env.example ]; then
+  cp .env.example .env || true
+fi
+
+# If PHPUnit / dev deps are missing, install them. We pass --no-scripts
+# so cache:clear does not run at install time (we call it ourselves only
+# if it is available, below). This keeps provisioning idempotent and
+# avoids blowing up on any Symfony bootstrap quirk in the validator env.
+if [ ! -f vendor/bin/phpunit ]; then
+  echo "--- Installing backend dev dependencies (phpunit, symfony/runtime) ---"
+  composer install --optimize-autoloader --no-interaction --no-scripts 2>&1 || true
+fi
+
 # Prepare test database: run migrations and load fixtures
 echo "--- Preparing test database ---"
-cd "$BACKEND_DIR"
 php bin/console doctrine:database:create --if-not-exists --env=test 2>&1 || true
 php bin/console doctrine:migrations:migrate --no-interaction --env=test 2>&1 || true
 php bin/console doctrine:fixtures:load --no-interaction --env=test 2>&1 || true
@@ -46,6 +76,19 @@ php vendor/bin/phpunit tests/api_tests/ --testdox 2>&1 || BACKEND_API=1
 
 echo "--- Frontend Unit Tests (tests/unit_tests/) ---"
 cd "$FRONTEND_DIR"
+
+# Install frontend dev deps on demand so vitest.config.ts (which imports
+# vitest) resolves. The production frontend image is served by Nginx and
+# does not carry node_modules; the test run must install them JIT.
+if [ ! -d node_modules ] || [ ! -d node_modules/vitest ]; then
+  if command -v npm > /dev/null; then
+    echo "--- Installing frontend dev dependencies (vitest, @testing-library) ---"
+    npm ci --no-audit --no-fund 2>&1 || npm install --no-audit --no-fund 2>&1 || true
+  else
+    echo "WARNING: npm not found in container; frontend tests may fail"
+  fi
+fi
+
 npx vitest run tests/unit_tests/ 2>&1 || FRONTEND_UNIT=1
 [ $FRONTEND_UNIT -eq 0 ] && echo "✅ Frontend Unit PASSED" || echo "❌ Frontend Unit FAILED"
 
