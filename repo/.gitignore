@@ -7,3 +7,4 @@
 *.log
 mysql-data/
 uploads/
+.claude/
