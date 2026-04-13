@@ -63,6 +63,23 @@ else
     echo "--- Starting mysql-test container for tests ---"
     $DC --profile test up -d mysql-test 2>&1 || true
   fi
+
+  # Wait until mysql-test is actually accepting connections. "Container
+  # Started" only means the entrypoint is running — MySQL itself needs
+  # ~20-30s to initialize on a fresh volume. Without this loop every
+  # downstream doctrine command fails with "[2002] Connection refused",
+  # which is exactly the cascade we were hitting in the validator logs.
+  echo "--- Waiting for mysql-test to be ready ---"
+  for i in $(seq 1 60); do
+    if $DC exec -T mysql-test mysqladmin ping -h127.0.0.1 -uroot -proot_pass --silent > /dev/null 2>&1; then
+      echo "mysql-test is ready (after ${i}s)"
+      break
+    fi
+    if [ "$i" = "60" ]; then
+      echo "WARNING: mysql-test did not become ready within 120s; continuing anyway"
+    fi
+    sleep 2
+  done
 fi
 
 # Test-env overrides. The production backend container boots with
