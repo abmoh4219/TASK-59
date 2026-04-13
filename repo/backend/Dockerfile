@@ -140,6 +140,14 @@ CMD ["/entrypoint.sh"]
 # ---------- Test stage ----------
 FROM base AS test
 
+# Symfony's Dotenv loader (invoked by cache:clear during composer's
+# post-install-cmd) requires a .env file on disk. The base stage ships no
+# .env so it uses `|| true` to swallow the failure; the test stage needs a
+# clean `composer install` with dev deps, so we materialize a stub .env
+# from the committed backend/.env.example. This file lives ONLY in the
+# test image layer — it is never part of the production/final image.
+RUN cp .env.example .env || true
+
 # Install dev dependencies for testing (PHPUnit etc.)
 RUN composer install --optimize-autoloader --no-interaction
 
