@@ -19,7 +19,8 @@ services:
       MYSQL_ROOT_PASSWORD: root_pass
       MYSQL_DATABASE: wfops
       MYSQL_USER: wfops
-      MYSQL_PASSWORD: wfops_pass
+      # Password must match the DATABASE_URL on the backend service.
+      MYSQL_PASSWORD: wfops
     ports:
       - "3306:3306"
     volumes:
