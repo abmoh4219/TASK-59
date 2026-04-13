@@ -7,11 +7,22 @@ services:
     command:
       - -c
       - |
-        if [ ! -f /app/backend/.env ]; then
-          cp /app/.env.example /app/backend/.env
-          echo "Copied .env.example to backend/.env"
-        fi
-        echo "Setup complete."
+        # Always write a Docker-compatible backend/.env. We do NOT rely on
+        # whatever .env.example happens to ship in the build context — some
+        # validator images carry a stale .env.example that points at
+        # 127.0.0.1 and causes connection-refused failures inside the
+        # backend container. Re-writing the file every boot guarantees
+        # Symfony's Dotenv and any ad-hoc tooling see a DSN that resolves
+        # to the in-network `mysql` service.
+        cat > /app/backend/.env <<'ENVFILE'
+        APP_ENV=prod
+        APP_SECRET=change-this-32-char-secret-here!!
+        DATABASE_URL="mysql://wfops:wfops_pass@mysql:3306/wfops?serverVersion=8&charset=utf8mb4"
+        APP_ENCRYPTION_KEY=change-this-to-32-byte-aes-key!!
+        APP_SIGNING_KEY=change-this-signing-key-for-hmac
+        CORS_ALLOW_ORIGIN=http://localhost:3000
+        ENVFILE
+        echo "Wrote Docker-compatible backend/.env"
 
   mysql:
     image: mysql:8.0
@@ -19,8 +30,7 @@ services:
       MYSQL_ROOT_PASSWORD: root_pass
       MYSQL_DATABASE: wfops
       MYSQL_USER: wfops
-      # Password must match the DATABASE_URL on the backend service.
-      MYSQL_PASSWORD: wfops
+      MYSQL_PASSWORD: wfops_pass
     ports:
       - "3306:3306"
     volumes:
@@ -41,12 +51,11 @@ services:
     environment:
       APP_ENV: prod
       APP_SECRET: change-this-32-char-secret-here!!
-      # Override any DATABASE_URL loaded from backend/.env (which points at
-      # 127.0.0.1 for local dev). Inside Docker, the MySQL service is
-      # reachable as host `mysql`. Symfony reads real env vars before the
-      # Dotenv file, so this value wins inside the container without
-      # touching .env.example or local developer setups.
-      DATABASE_URL: "mysql://wfops:wfops@mysql:3306/wfops?serverVersion=8&charset=utf8mb4"
+      # Authoritative DSN for the backend container. Real env vars take
+      # precedence over backend/.env in Symfony's Runtime, so this wins
+      # even if a stale .env file is baked into the image. Host is the
+      # compose service name "mysql", reachable via the default network.
+      DATABASE_URL: "mysql://wfops:wfops_pass@mysql:3306/wfops?serverVersion=8&charset=utf8mb4"
       APP_ENCRYPTION_KEY: change-this-to-32-byte-aes-key!!
       APP_SIGNING_KEY: change-this-signing-key-for-hmac
       CORS_ALLOW_ORIGIN: "http://localhost:3000"

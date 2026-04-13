@@ -1,0 +1,16 @@
+# Never bake host-local env files into the image. The container reads
+# DATABASE_URL from the docker-compose `environment:` block, and the
+# `setup` service writes a Docker-compatible backend/.env at boot.
+.env
+.env.local
+.env.*.local
+
+# Build artefacts that must be produced inside the image, not copied in.
+vendor/
+var/cache/
+var/log/
+
+# Editor / OS noise
+.idea/
+.vscode/
+.DS_Store
