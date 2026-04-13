@@ -40,7 +40,12 @@ services:
     environment:
       APP_ENV: prod
       APP_SECRET: change-this-32-char-secret-here!!
-      DATABASE_URL: "mysql://wfops:wfops_pass@mysql:3306/wfops?serverVersion=8.0"
+      # Override any DATABASE_URL loaded from backend/.env (which points at
+      # 127.0.0.1 for local dev). Inside Docker, the MySQL service is
+      # reachable as host `mysql`. Symfony reads real env vars before the
+      # Dotenv file, so this value wins inside the container without
+      # touching .env.example or local developer setups.
+      DATABASE_URL: "mysql://wfops:wfops@mysql:3306/wfops?serverVersion=8&charset=utf8mb4"
       APP_ENCRYPTION_KEY: change-this-to-32-byte-aes-key!!
       APP_SIGNING_KEY: change-this-signing-key-for-hmac
       CORS_ALLOW_ORIGIN: "http://localhost:3000"
