@@ -86,4 +86,68 @@ class AttendanceApiTest extends WebTestCase
 
         $this->assertResponseStatusCodeSame(200);
     }
+
+    /** GET /api/attendance/{date} — employee fetches a specific historical date card. */
+    public function testGetAttendanceByDate(): void
+    {
+        [$client, $csrf] = $this->loginAsEmployee();
+
+        $date = (new \DateTimeImmutable('-1 day'))->format('Y-m-d');
+
+        $client->request(
+            'GET',
+            "/api/attendance/$date",
+            [],
+            [],
+            ['HTTP_X-CSRF-TOKEN' => $csrf]
+        );
+
+        $this->assertResponseStatusCodeSame(200);
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertIsArray($data);
+        $this->assertArrayHasKey('recordDate', $data);
+        $this->assertSame($date, $data['recordDate']);
+    }
+
+    /** GET /api/attendance/rules — returns active exception rules for policy hints. */
+    public function testGetAttendanceRules(): void
+    {
+        [$client, $csrf] = $this->loginAsEmployee();
+
+        $client->request(
+            'GET',
+            '/api/attendance/rules',
+            [],
+            [],
+            ['HTTP_X-CSRF-TOKEN' => $csrf]
+        );
+
+        $this->assertResponseStatusCodeSame(200);
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertIsArray($data, 'Rules response must be an array');
+        $this->assertNotEmpty($data, 'At least one exception rule must be returned (seed data)');
+
+        $first = $data[0];
+        $this->assertArrayHasKey('ruleType', $first);
+        $this->assertArrayHasKey('toleranceMinutes', $first);
+        $this->assertArrayHasKey('filingWindowDays', $first);
+    }
+
+    /** Unauthenticated request to /api/attendance/today must be rejected. */
+    public function testAttendanceTodayUnauthenticatedReturns401(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/api/attendance/today');
+        $this->assertContains($client->getResponse()->getStatusCode(), [401, 403]);
+    }
+
+    /** Unauthenticated request to /api/attendance/history must be rejected. */
+    public function testAttendanceHistoryUnauthenticatedReturns401(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/api/attendance/history');
+        $this->assertContains($client->getResponse()->getStatusCode(), [401, 403]);
+    }
 }

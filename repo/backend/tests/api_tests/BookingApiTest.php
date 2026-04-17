@@ -330,6 +330,90 @@ class BookingApiTest extends WebTestCase
     // Test: POST /api/bookings — missing required fields returns 400
     // -------------------------------------------------------------------------
 
+    // -------------------------------------------------------------------------
+    // Test: GET /api/resources/{id}/availability — check resource availability
+    // -------------------------------------------------------------------------
+
+    /**
+     * GET /api/resources/{id}/availability?date=YYYY-MM-DD must return an
+     * 'available' flag and a 'bookedSlots' array.
+     */
+    public function testGetResourceAvailability(): void
+    {
+        [$client, $csrfToken] = $this->login('employee', 'Emp@2024!');
+
+        $client->request('GET', '/api/resources', [], [], ['HTTP_X-CSRF-TOKEN' => $csrfToken]);
+        $resources  = json_decode($client->getResponse()->getContent(), true);
+        $resourceId = $resources[0]['id'];
+        $date       = date('Y-m-d', strtotime('+60 days'));
+
+        $client->request(
+            'GET',
+            "/api/resources/{$resourceId}/availability?date={$date}",
+            [],
+            [],
+            ['HTTP_X-CSRF-TOKEN' => $csrfToken]
+        );
+
+        $this->assertResponseStatusCodeSame(200);
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertIsArray($data);
+        $this->assertArrayHasKey('available', $data, 'Availability response must include "available"');
+        $this->assertArrayHasKey('bookedSlots', $data, 'Availability response must include "bookedSlots"');
+        $this->assertIsBool($data['available'], '"available" must be boolean');
+        $this->assertIsArray($data['bookedSlots'], '"bookedSlots" must be an array');
+    }
+
+    // -------------------------------------------------------------------------
+    // Test: GET /api/bookings — list own bookings
+    // -------------------------------------------------------------------------
+
+    /**
+     * GET /api/bookings must return a list of bookings for the authenticated user.
+     */
+    public function testListOwnBookings(): void
+    {
+        [$client, $csrfToken] = $this->login('employee', 'Emp@2024!');
+
+        $client->request(
+            'GET',
+            '/api/bookings',
+            [],
+            [],
+            ['HTTP_X-CSRF-TOKEN' => $csrfToken]
+        );
+
+        $this->assertResponseStatusCodeSame(200);
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertIsArray($data, 'GET /api/bookings must return a JSON array');
+
+        // Each booking (if any) must have expected fields
+        foreach ($data as $booking) {
+            $this->assertArrayHasKey('id', $booking, 'Each booking must have "id"');
+            $this->assertArrayHasKey('status', $booking, 'Each booking must have "status"');
+        }
+    }
+
+    /** Unauthenticated request to GET /api/bookings must be rejected. */
+    public function testListBookingsUnauthenticatedReturns401(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/api/bookings');
+        $this->assertContains($client->getResponse()->getStatusCode(), [401, 403]);
+    }
+
+    /** POST /api/bookings unauthenticated must return 401. */
+    public function testCreateBookingUnauthenticatedReturns401(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/api/bookings', [], [], ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['resourceId' => 1, 'startDatetime' => '2035-01-01 09:00', 'endDatetime' => '2035-01-01 10:00', 'purpose' => 'test'])
+        );
+        $this->assertContains($client->getResponse()->getStatusCode(), [401, 403]);
+    }
+
     /**
      * Submitting a booking payload with no purpose must return 400 Bad Request.
      */

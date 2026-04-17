@@ -429,4 +429,187 @@ class WorkOrderApiTest extends WebTestCase
         $data = json_decode($client->getResponse()->getContent(), true);
         $this->assertArrayHasKey('error', $data);
     }
+
+    // -------------------------------------------------------------------------
+    // GET /api/work-orders/technicians — dispatcher fetches technician list
+    // -------------------------------------------------------------------------
+
+    /**
+     * GET /api/work-orders/technicians must return a list of active technicians
+     * when called as a dispatcher.
+     */
+    public function testDispatcherCanListTechnicians(): void
+    {
+        [$client, $csrfToken] = $this->loginAsDispatcher();
+
+        $client->request(
+            'GET',
+            '/api/work-orders/technicians',
+            [],
+            [],
+            ['HTTP_X-CSRF-TOKEN' => $csrfToken]
+        );
+
+        $this->assertResponseStatusCodeSame(200, 'Dispatcher must be able to list technicians');
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertIsArray($data);
+    }
+
+    /** Unauthenticated request to GET /api/work-orders/technicians must be rejected. */
+    public function testTechniciansEndpointUnauthenticatedReturns401(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/api/work-orders/technicians');
+        $this->assertContains($client->getResponse()->getStatusCode(), [401, 403]);
+    }
+
+    // -------------------------------------------------------------------------
+    // POST /api/work-orders/{id}/rate — employee rates a completed work order
+    // -------------------------------------------------------------------------
+
+    /**
+     * Full flow: employee submits work order → dispatcher dispatches → technician
+     * accepts → starts → completes → employee rates it.
+     * Each role uses an independent KernelBrowser to avoid session conflicts.
+     */
+    public function testEmployeeRatesCompletedWorkOrder(): void
+    {
+        // Independent clients per role — no shared session contamination
+        $empClient = static::createClient();
+        $empClient->request('POST', '/api/auth/login', [], [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['username' => 'employee', 'password' => 'Emp@2024!'])
+        );
+        $this->assertResponseStatusCodeSame(200);
+        $empCsrf = json_decode($empClient->getResponse()->getContent(), true)['csrfToken'];
+
+        // Step 1: Create work order
+        $empClient->request('POST', '/api/work-orders', [], [], [
+            'CONTENT_TYPE'      => 'application/json',
+            'HTTP_X-CSRF-TOKEN' => $empCsrf,
+        ], json_encode([
+            'category'    => 'Electrical',
+            'priority'    => 'LOW',
+            'description' => 'Rate flow test',
+            'building'    => 'Rate Block',
+            'room'        => '999',
+        ]));
+        $this->assertResponseStatusCodeSame(201);
+        $woId = json_decode($empClient->getResponse()->getContent(), true)['id'];
+
+        // Step 2: Dispatcher dispatches (assigns technician)
+        // Use the same client (clear cookies) to avoid multi-kernel-boot issue
+        $empClient->getCookieJar()->clear();
+        $empClient->request('POST', '/api/auth/login', [], [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['username' => 'dispatcher', 'password' => 'Dispatch@2024!'])
+        );
+        $this->assertResponseStatusCodeSame(200);
+        $dispCsrf = json_decode($empClient->getResponse()->getContent(), true)['csrfToken'];
+        $dispClient = $empClient; // alias for clarity
+
+        // Get technician ID via the /api/work-orders/technicians endpoint
+        $dispClient->request('GET', '/api/work-orders/technicians', [], [], ['HTTP_X-CSRF-TOKEN' => $dispCsrf]);
+        $this->assertResponseStatusCodeSame(200, 'Dispatcher must be able to list technicians');
+        $technicians = json_decode($dispClient->getResponse()->getContent(), true);
+        $this->assertNotEmpty($technicians, 'At least one technician must be in the seed data');
+        $techId = $technicians[0]['id'];
+        $this->assertNotNull($techId, 'Technician must have a valid ID');
+
+        $dispBody = json_encode(['status' => 'dispatched', 'technicianId' => $techId]);
+        $dispSig  = $this->sign('PATCH', "/api/work-orders/{$woId}/status", $dispBody, $dispCsrf);
+        $dispClient->request('PATCH', "/api/work-orders/{$woId}/status", [], [], [
+            'CONTENT_TYPE'         => 'application/json',
+            'HTTP_X-CSRF-TOKEN'    => $dispCsrf,
+            'HTTP_X-Api-Signature' => $dispSig['signature'],
+            'HTTP_X-Timestamp'     => $dispSig['timestamp'],
+        ], $dispBody);
+        $this->assertResponseStatusCodeSame(200, 'Dispatcher must dispatch the work order');
+
+        // Step 3: Technician accepts → in_progress → completed (reuse same client)
+        $empClient->getCookieJar()->clear();
+        $empClient->request('POST', '/api/auth/login', [], [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['username' => 'technician', 'password' => 'Tech@2024!'])
+        );
+        $this->assertResponseStatusCodeSame(200);
+        $techCsrf = json_decode($empClient->getResponse()->getContent(), true)['csrfToken'];
+        $techClient = $empClient;
+
+        foreach (['accepted', 'in_progress', 'completed'] as $nextStatus) {
+            $tBody = json_encode(['status' => $nextStatus]);
+            $tSig  = $this->sign('PATCH', "/api/work-orders/{$woId}/status", $tBody, $techCsrf);
+            $techClient->request('PATCH', "/api/work-orders/{$woId}/status", [], [], [
+                'CONTENT_TYPE'         => 'application/json',
+                'HTTP_X-CSRF-TOKEN'    => $techCsrf,
+                'HTTP_X-Api-Signature' => $tSig['signature'],
+                'HTTP_X-Timestamp'     => $tSig['timestamp'],
+            ], $tBody);
+            $this->assertResponseStatusCodeSame(200, "Technician must be able to set status to $nextStatus");
+        }
+
+        // Step 4: Employee re-authenticates (reuse same client) and rates
+        $empClient->getCookieJar()->clear();
+        $empClient->request('POST', '/api/auth/login', [], [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['username' => 'employee', 'password' => 'Emp@2024!'])
+        );
+        $this->assertResponseStatusCodeSame(200);
+        $empCsrf2 = json_decode($empClient->getResponse()->getContent(), true)['csrfToken'];
+
+        $rateBody = json_encode(['rating' => 5]);
+        $rateSig  = $this->sign('POST', "/api/work-orders/{$woId}/rate", $rateBody, $empCsrf2);
+        $empClient->request('POST', "/api/work-orders/{$woId}/rate", [], [], [
+            'CONTENT_TYPE'         => 'application/json',
+            'HTTP_X-CSRF-TOKEN'    => $empCsrf2,
+            'HTTP_X-Api-Signature' => $rateSig['signature'],
+            'HTTP_X-Timestamp'     => $rateSig['timestamp'],
+        ], $rateBody);
+
+        $this->assertResponseStatusCodeSame(200, 'Employee must be able to rate a completed work order');
+
+        $rateData = json_decode($empClient->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('message', $rateData);
+    }
+
+    /** POST /api/work-orders unauthenticated must return 401. */
+    public function testCreateWorkOrderUnauthenticatedReturns401(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/api/work-orders', [], [], ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['category' => 'Test', 'priority' => 'LOW', 'description' => 'x', 'building' => 'B', 'room' => '1'])
+        );
+        $this->assertContains($client->getResponse()->getStatusCode(), [401, 403]);
+    }
+
+    /** GET /api/work-orders/{id} — employee fetches their own work order detail. */
+    public function testGetWorkOrderDetailReturnsExpectedFields(): void
+    {
+        [$client, $csrf] = $this->loginAsEmployee();
+
+        // Create a work order first
+        $client->request('POST', '/api/work-orders', [], [], [
+            'CONTENT_TYPE'      => 'application/json',
+            'HTTP_X-CSRF-TOKEN' => $csrf,
+        ], json_encode([
+            'category'    => 'Plumbing',
+            'priority'    => 'MEDIUM',
+            'description' => 'Detail test',
+            'building'    => 'Detail Block',
+            'room'        => '100',
+        ]));
+        $this->assertResponseStatusCodeSame(201);
+        $woId = json_decode($client->getResponse()->getContent(), true)['id'];
+
+        $client->request('GET', "/api/work-orders/{$woId}", [], [], ['HTTP_X-CSRF-TOKEN' => $csrf]);
+        $this->assertResponseStatusCodeSame(200);
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('id', $data);
+        $this->assertArrayHasKey('status', $data);
+        $this->assertArrayHasKey('category', $data);
+        $this->assertSame($woId, $data['id']);
+        $this->assertSame('Plumbing', $data['category']);
+    }
 }

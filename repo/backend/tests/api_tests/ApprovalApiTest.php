@@ -216,4 +216,188 @@ class ApprovalApiTest extends WebTestCase
         $data = json_decode($client->getResponse()->getContent(), true);
         $this->assertNotNull($data, 'Health endpoint must return valid JSON');
     }
+
+    /**
+     * Supervisor rejects step 1 of an employee's exception request.
+     * POST /api/approvals/{stepId}/reject must return 200 and mark the request REJECTED.
+     */
+    public function testSupervisorRejectStep1(): void
+    {
+        [$employeeClient, $employeeCsrf] = $this->loginAs('employee', 'Emp@2024!');
+
+        $today     = (new \DateTimeImmutable())->format('Y-m-d');
+        $clientKey = 'reject-flow-' . uniqid('', true);
+
+        $employeeClient->request(
+            'POST',
+            '/api/requests',
+            [],
+            [],
+            [
+                'CONTENT_TYPE'      => 'application/json',
+                'HTTP_X-CSRF-Token' => $employeeCsrf,
+            ],
+            json_encode([
+                'requestType' => 'CORRECTION',
+                'startDate'   => $today,
+                'endDate'     => $today,
+                'reason'      => 'Reject flow test',
+                'clientKey'   => $clientKey,
+            ])
+        );
+
+        $this->assertResponseStatusCodeSame(201, 'Employee must be able to create a request');
+        $requestData = json_decode($employeeClient->getResponse()->getContent(), true);
+        $stepId      = $requestData['steps'][0]['id'];
+
+        [$supervisorClient, $supervisorCsrf] = $this->loginAs('supervisor', 'Super@2024!');
+
+        $rejectBody = json_encode(['comment' => 'Rejected during automated test']);
+        $sig = $this->sign('POST', "/api/approvals/{$stepId}/reject", $rejectBody, $supervisorCsrf);
+
+        $supervisorClient->request(
+            'POST',
+            "/api/approvals/{$stepId}/reject",
+            [],
+            [],
+            [
+                'CONTENT_TYPE'         => 'application/json',
+                'HTTP_X-CSRF-Token'    => $supervisorCsrf,
+                'HTTP_X-Api-Signature' => $sig['signature'],
+                'HTTP_X-Timestamp'     => $sig['timestamp'],
+            ],
+            $rejectBody
+        );
+
+        $this->assertResponseStatusCodeSame(200, 'Supervisor should be able to reject step 1');
+
+        $rejectData = json_decode($supervisorClient->getResponse()->getContent(), true);
+        $this->assertArrayHasKey('message', $rejectData);
+        $this->assertStringContainsStringIgnoringCase('rejected', $rejectData['message']);
+    }
+
+    /**
+     * POST /api/approvals/{stepId}/reassign — admin reassigns a pending step.
+     */
+    public function testAdminReassignsApprovalStep(): void
+    {
+        [$employeeClient, $employeeCsrf] = $this->loginAs('employee', 'Emp@2024!');
+
+        $today     = (new \DateTimeImmutable())->format('Y-m-d');
+        $clientKey = 'reassign-flow-' . uniqid('', true);
+
+        $employeeClient->request(
+            'POST',
+            '/api/requests',
+            [],
+            [],
+            [
+                'CONTENT_TYPE'      => 'application/json',
+                'HTTP_X-CSRF-Token' => $employeeCsrf,
+            ],
+            json_encode([
+                'requestType' => 'CORRECTION',
+                'startDate'   => $today,
+                'endDate'     => $today,
+                'reason'      => 'Reassign step test',
+                'clientKey'   => $clientKey,
+            ])
+        );
+
+        $this->assertResponseStatusCodeSame(201);
+        $requestData = json_decode($employeeClient->getResponse()->getContent(), true);
+        $stepId      = $requestData['steps'][0]['id'];
+
+        // Admin reassigns step 1 to HR Admin
+        [$adminClient, $adminCsrf] = $this->loginAs('admin', 'Admin@WFOps2024!');
+
+        // Find HR admin ID
+        $adminClient->request('GET', '/api/admin/users', [], [], ['HTTP_X-CSRF-TOKEN' => $adminCsrf]);
+        $users   = json_decode($adminClient->getResponse()->getContent(), true);
+        $hrAdmin = array_values(array_filter($users, fn($u) => $u['username'] === 'hradmin'))[0];
+        $hrId    = $hrAdmin['id'];
+
+        $reassignBody = json_encode(['newApproverId' => $hrId, 'reason' => 'Admin reassignment test']);
+        $sig = $this->sign('POST', "/api/approvals/{$stepId}/reassign", $reassignBody, $adminCsrf);
+
+        $adminClient->request(
+            'POST',
+            "/api/approvals/{$stepId}/reassign",
+            [],
+            [],
+            [
+                'CONTENT_TYPE'         => 'application/json',
+                'HTTP_X-CSRF-Token'    => $adminCsrf,
+                'HTTP_X-Api-Signature' => $sig['signature'],
+                'HTTP_X-Timestamp'     => $sig['timestamp'],
+            ],
+            $reassignBody
+        );
+
+        $status = $adminClient->getResponse()->getStatusCode();
+        // Accept 200 (success) or 400 (invalid target role for this step)
+        $this->assertContains($status, [200, 400], "Reassign must return 200 or 400, got $status");
+    }
+
+    /** Unauthenticated request to GET /api/approvals/queue must return 401. */
+    public function testApprovalQueueUnauthenticatedReturns401(): void
+    {
+        $client = static::createClient();
+        $client->request('GET', '/api/approvals/queue');
+        $this->assertContains($client->getResponse()->getStatusCode(), [401, 403]);
+    }
+
+    /** Employee (non-approver) trying to approve a step they do not own must fail. */
+    public function testEmployeeCannotApproveStep(): void
+    {
+        // Create a request as employee (step 1 belongs to supervisor)
+        [$employeeClient, $employeeCsrf] = $this->loginAs('employee', 'Emp@2024!');
+        $today     = (new \DateTimeImmutable())->format('Y-m-d');
+        $clientKey = 'emp-approve-' . uniqid('', true);
+
+        $employeeClient->request(
+            'POST',
+            '/api/requests',
+            [],
+            [],
+            [
+                'CONTENT_TYPE'      => 'application/json',
+                'HTTP_X-CSRF-Token' => $employeeCsrf,
+            ],
+            json_encode([
+                'requestType' => 'CORRECTION',
+                'startDate'   => $today,
+                'endDate'     => $today,
+                'reason'      => 'Employee tries to approve own request',
+                'clientKey'   => $clientKey,
+            ])
+        );
+
+        $this->assertResponseStatusCodeSame(201);
+        $stepId = json_decode($employeeClient->getResponse()->getContent(), true)['steps'][0]['id'];
+
+        // Employee tries to approve the step (they are the requester, NOT the approver)
+        $approveBody = json_encode(['comment' => 'Self-approve attempt']);
+        $sig = $this->sign('POST', "/api/approvals/{$stepId}/approve", $approveBody, $employeeCsrf);
+
+        $employeeClient->request(
+            'POST',
+            "/api/approvals/{$stepId}/approve",
+            [],
+            [],
+            [
+                'CONTENT_TYPE'         => 'application/json',
+                'HTTP_X-CSRF-Token'    => $employeeCsrf,
+                'HTTP_X-Api-Signature' => $sig['signature'],
+                'HTTP_X-Timestamp'     => $sig['timestamp'],
+            ],
+            $approveBody
+        );
+
+        $this->assertContains(
+            $employeeClient->getResponse()->getStatusCode(),
+            [400, 403],
+            'Employee must not be able to approve a step they do not own'
+        );
+    }
 }

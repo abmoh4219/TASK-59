@@ -246,6 +246,86 @@ class ExceptionRequestApiTest extends WebTestCase
         $this->assertStringContainsStringIgnoringCase('withdrawn', $data['message']);
     }
 
+    /** GET /api/requests — employee sees their own list of requests (returns direct array). */
+    public function testListOwnRequests(): void
+    {
+        [$client, $csrfToken] = $this->loginAs('employee', 'Emp@2024!');
+
+        // Create at least one request first
+        $this->createRequest($client, $csrfToken);
+        $this->assertResponseStatusCodeSame(201, 'Request creation must succeed before list test');
+
+        $client->request(
+            'GET',
+            '/api/requests',
+            [],
+            [],
+            ['HTTP_X-CSRF-Token' => $csrfToken]
+        );
+
+        $this->assertResponseStatusCodeSame(200);
+
+        $data = json_decode($client->getResponse()->getContent(), true);
+        $this->assertIsArray($data, 'GET /api/requests must return a JSON array');
+        $this->assertNotEmpty($data, 'At least the just-created request must appear in the list');
+
+        $first = $data[0];
+        $this->assertArrayHasKey('id', $first, 'Each request must have "id"');
+        $this->assertArrayHasKey('requestType', $first, 'Each request must have "requestType"');
+        $this->assertArrayHasKey('status', $first, 'Each request must have "status"');
+    }
+
+    /**
+     * POST /api/requests/{id}/reassign — endpoint exists and is authenticated.
+     * Uses independent clients per role to avoid shared-session conflicts.
+     */
+    public function testRequesterReassignEndpointIsAccessible(): void
+    {
+        // Use a fresh client for each role to avoid session contamination.
+        $empClient = static::createClient();
+        $empClient->request('POST', '/api/auth/login', [], [],
+            ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['username' => 'employee', 'password' => 'Emp@2024!'])
+        );
+        $this->assertResponseStatusCodeSame(200);
+        $empCsrf = json_decode($empClient->getResponse()->getContent(), true)['csrfToken'];
+
+        // Create a request
+        $empClient->request('POST', '/api/requests', [], [], [
+            'CONTENT_TYPE'      => 'application/json',
+            'HTTP_X-CSRF-Token' => $empCsrf,
+        ], json_encode([
+            'requestType' => 'CORRECTION',
+            'startDate'   => (new \DateTimeImmutable())->format('Y-m-d'),
+            'endDate'     => (new \DateTimeImmutable())->format('Y-m-d'),
+            'reason'      => 'Reassign endpoint test',
+            'clientKey'   => 'reassign-ep-' . uniqid('', true),
+        ]));
+        $this->assertResponseStatusCodeSame(201);
+        $requestId = json_decode($empClient->getResponse()->getContent(), true)['id'];
+
+        // Try to reassign — may succeed or fail with 400/401 depending on approver state.
+        // We are mainly verifying the endpoint exists (not 404/500).
+        $empClient->request('POST', "/api/requests/$requestId/reassign", [], [], [
+            'CONTENT_TYPE'      => 'application/json',
+            'HTTP_X-CSRF-Token' => $empCsrf,
+        ], json_encode(['newApproverId' => 999, 'reason' => 'Approver unavailable']));
+
+        $status = $empClient->getResponse()->getStatusCode();
+        $this->assertNotSame(404, $status, 'Reassign endpoint must exist (not 404)');
+        $this->assertNotSame(500, $status, 'Reassign endpoint must not return 500');
+    }
+
+    /** POST /api/requests unauthenticated must return 401. */
+    public function testCreateRequestUnauthenticatedReturns401(): void
+    {
+        $client = static::createClient();
+        $client->request('POST', '/api/requests', [], [], ['CONTENT_TYPE' => 'application/json'],
+            json_encode(['requestType' => 'CORRECTION', 'startDate' => date('Y-m-d'), 'endDate' => date('Y-m-d'), 'reason' => 'test'])
+        );
+        $this->assertContains($client->getResponse()->getStatusCode(), [401, 403]);
+    }
+
     /**
      * An employee must not be able to view another user's exception request.
      * A supervisor should be able to view any request.

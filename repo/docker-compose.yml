@@ -76,6 +76,26 @@ services:
     depends_on:
       - backend
 
+  # E2E test service — runs Playwright tests against the running application.
+  # Uses the already-pulled image so Docker does not download browsers again.
+  e2e:
+    image: mcr.microsoft.com/playwright:v1.59.1-jammy
+    profiles: ["e2e"]
+    volumes:
+      - ./frontend:/app/frontend
+    working_dir: /app/frontend
+    environment:
+      BASE_URL: http://frontend:80
+      PLAYWRIGHT_BROWSERS_PATH: /ms-playwright
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      CI: "true"
+    network_mode: "host"
+    command: >
+      bash -c "
+        PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-save @playwright/test --no-fund --no-audit 2>&1 &&
+        BASE_URL=http://localhost:3000 npx playwright test tests/e2e/ --reporter=list 2>&1
+      "
+
   # Test services — only run with --profile test
   mysql-test:
     image: mysql:8.0
@@ -87,6 +107,8 @@ services:
       MYSQL_PASSWORD: wfops_pass
     ports:
       - "3307:3306"
+    volumes:
+      - mysql-test-data:/var/lib/mysql
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_pass"]
       interval: 5s
@@ -122,4 +144,5 @@ services:
 
 volumes:
   mysql-data:
+  mysql-test-data:
   uploads:

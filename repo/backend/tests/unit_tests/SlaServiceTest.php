@@ -89,14 +89,16 @@ class SlaServiceTest extends TestCase
      */
     public function testRemainingMinutes(): void
     {
-        // Future deadline: SLA deadline 2 business days from now (plenty of time)
-        $futureDeadline = new \DateTimeImmutable('+2 days');
+        // Future deadline: calculated via business hours to guarantee > 0 remaining business minutes.
+        // Using calculateSlaDeadline(now, 2) adds 2 business hours, producing a deadline that
+        // is always in the future AND within business hours — so countBusinessMinutes returns > 0.
+        $futureDeadline = $this->slaService->calculateSlaDeadline(new \DateTimeImmutable(), 2);
         $futureStep = $this->createMock(ApprovalStep::class);
         $futureStep->method('getSlaDeadline')
             ->willReturn($futureDeadline);
 
         $remaining = $this->slaService->getRemainingMinutes($futureStep);
-        $this->assertGreaterThan(0, $remaining, 'Future deadline should have positive remaining minutes');
+        $this->assertGreaterThan(0, $remaining, 'A deadline 2 business hours in the future must have positive remaining business minutes');
 
         // Past deadline: SLA expired yesterday
         $pastDeadline = new \DateTimeImmutable('-1 day');
